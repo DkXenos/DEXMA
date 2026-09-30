@@ -51,9 +51,26 @@ enum DebugSnapshot {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { report("close +150ms") }
                 DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
                     report("close settled")
-                    NSApp.terminate(nil)
+                    settingsChecks(panel: panel)
                 }
             }
+        }
+    }
+
+    private static func settingsChecks(panel: NSPanel) {
+        guard let app = NSApp.delegate as? AppDelegate else { return }
+        let widthBefore = panel.frame.width
+        app.settings.panelWidth = 800
+        print("[selftest] panel width \(widthBefore) → \(panel.frame.width) after settings.panelWidth = 800")
+        app.settings.hotKey = KeyCombo(keyCode: 0x31, carbonModifiers: 0x0800, display: "⌥Space", menuKey: " ")
+        app.settings.hotKey = .defaultCombo
+        print("[selftest] hotkey re-registered twice without trouble")
+        app.showSettings(nil)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
+            let windows = NSApp.windows.filter(\.isVisible).map { "\($0.title.isEmpty ? String(describing: type(of: $0)) : $0.title) \(Int($0.frame.width))x\(Int($0.frame.height))" }
+            print("[selftest] visible windows: \(windows)")
+            for key in ["panelWidth", "hotKey"] { UserDefaults.standard.removeObject(forKey: key) }
+            NSApp.terminate(nil)
         }
     }
 

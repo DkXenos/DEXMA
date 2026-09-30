@@ -13,6 +13,8 @@ final class HotKey {
     private let action: () -> Void
     private var hotKeyRef: EventHotKeyRef?
     private var handlerRef: EventHandlerRef?
+    /// False if Carbon refused the combination (e.g. another app holds it exclusively).
+    private(set) var isRegistered = false
 
     /// `keyCode` is a virtual key code (`kVK_…`), `modifiers` Carbon flags (`optionKey`, …).
     init(keyCode: Int, modifiers: Int, action: @escaping () -> Void) {
@@ -29,7 +31,8 @@ final class HotKey {
         let registerStatus = RegisterEventHotKey(UInt32(keyCode), UInt32(modifiers),
                                                  EventHotKeyID(signature: Self.signature, id: id),
                                                  GetApplicationEventTarget(), 0, &hotKeyRef)
-        if installStatus != noErr || registerStatus != noErr {
+        isRegistered = installStatus == noErr && registerStatus == noErr
+        if !isRegistered {
             Self.logger.error(
                 "Hotkey registration failed: install \(installStatus), register \(registerStatus)")
         }

@@ -14,23 +14,29 @@ like a third-party app.
 - **Close:** swipe up, Esc, or hotkey. Focus returns to the previously active app.
 
 ## Architecture — keep these separated
-- `main.swift` — pure AppKit entry (no SwiftUI `App`): no default window, no Settings
-  scene, no implicit main menu.
-- `AppDelegate` — owns everything; builds and wires all objects at launch.
+- `main.swift` — pure AppKit entry (no SwiftUI `App`): no default window or Settings scene.
+- `AppDelegate` — owns everything; builds and wires all objects at launch; applies
+  `AppSettings` live; picks the screen (`DisplayChoice`).
 - `NotchGeometry` — notch rect from `NSScreen` (`auxiliaryTopLeftArea`/`auxiliaryTopRightArea`,
   `safeAreaInsets`); fallback size for non-notch screens; the panel's window frame.
 - `NotchPanel` — borderless non-activating `NSPanel` above the menu bar; `canJoinAllSpaces`
   + `fullScreenAuxiliary` + `stationary`; transparent. Ordered in at launch, never ordered out.
-- `NotchShape` (Phase 2) — SwiftUI `Shape` with animatable width/height/bottom corner radii.
+- `NotchShape` — SwiftUI `Shape` with animatable width/height/bottom radius/ear radius.
 - `PanelController` — single source of truth: `progress` (0 = notch, 1 = expanded) + state
-  (closed/open; peek arrives in Phase 7). Hotkey and gesture both drive it.
+  (closed/peek/open). Hotkey, gesture, hover and the menu bar item all drive it; owns focus.
 - `SpringDriver` — advances `progress` with SwiftUI's `Spring` on the panel's `CADisplayLink`.
 - `HotKey` — Carbon `RegisterEventHotKey` wrapper (needs no permissions).
 - `NotchContentView` — SwiftUI root inside the panel; derives all geometry from `progress`.
-- `TerminalHost` (Phase 3) — `NSViewRepresentable` wrapping ONE long-lived
-  `LocalProcessTerminalView`. Never recreated.
-- `GestureEngine` (Phases 5–6) — raw touches → progress; `CGEventTap` swallows scroll
-  events while the gesture is active.
+- `ShellSession` — ONE long-lived `LocalProcessTerminalView` + zsh (respawned on exit);
+  `TerminalContainerView` masks it to the shape. `TerminalHost` — the `NSViewRepresentable`
+  that hands that same view to SwiftUI. Never recreated.
+- `GestureRecognizer` (pure, unit-tested) + `GestureEngine` (OpenMultitouchSupport frames →
+  recognizer → controller). `ScrollBlocker`/`ScrollGate` — `CGEventTap` on its own thread
+  swallowing scroll during a swipe. `AccessibilityPermission` — live AX trust.
+- `HoverMonitor` — pointer over the notch → peek. `AppSettings`/`KeyCombo` — UserDefaults.
+- UI: `StatusItemController` (menu bar item; also `MainMenu`), `SettingsWindow`
+  (`SettingsView`, `TrackpadPreview`, `ShortcutRecorder`), `Onboarding`, `LoginItem`.
+- `DebugSnapshot` — DEBUG-only `-selftest` / `-snapshot <dir>` / `-forcePill` hooks.
 
 ## Animation model
 - `progress` is always the on-screen (presentation) value. `SpringDriver` steps it each
@@ -59,10 +65,12 @@ like a third-party app.
 - **Don't edit `project.pbxproj`** unless absolutely necessary. Adding/removing Swift files
   needs no project edit (the target uses a synchronized folder). For entitlements,
   Info.plist keys, build settings or packages: tell the user, they change it in Xcode.
+  (Exception on record: the user OK'd Claude's one pbxproj edit for packages/settings/name.)
+- Unit tests: `xcodebuild test … -only-testing:terminal-applicationTests` (Swift Testing).
 - Small, focused files. Comment only the non-obvious parts (especially gesture math and
   window levels).
-- Work in phases; stop after each so the user can test on real hardware. Don't start the
-  next phase without an OK. Tick the phase below when it's done.
+- Work in phases and tick them below. (Phases 2–8 were run back to back at the user's
+  request; new work: ask whether to stop between steps.)
 
 ## Phases
 - [x] 1. Notch panel + global hotkey (Carbon, default ⌥`) toggling open/close with a spring. Plain black rounded rect.
@@ -72,7 +80,7 @@ like a third-party app.
 - [x] 5. GestureEngine: two touches starting in the top ~10% of the trackpad moving down drive progress interactively.
 - [x] 6. CGEventTap to swallow scroll during the gesture + Accessibility permission onboarding.
 - [x] 7. Polish: release velocity, peek state, Reduce Motion, launch at login (SMAppService), multi-display.
-- [ ] 8. Finished app: status item menu, Settings window, onboarding, gesture fallback, shell respawn, non-notch pill, app icon, Release build.
+- [x] 8. Finished app: status item menu, Settings window, onboarding, gesture fallback, shell respawn, non-notch pill, app icon, Release build.
 
 The user asked (2026-10-01) to run phases 2–8 without stopping between them: per phase, read
 package sources, build to 0 errors/0 warnings, launch-check, `git commit -m "Phase N: …"`,
@@ -147,6 +155,24 @@ update Progress below.
   0.06 & clickable → closed & click-through; 11 unit tests (incl. pill geometry). Unverified:
   hover feel, Reduce Motion, login item registration (not exercised to avoid touching the
   user's login items), opening on an external display.
+- **Phase 8:** menu bar item (notch glyph, template) with Open/Close Terminal (shows the
+  shortcut), Settings… (⌘,), Welcome & Permissions…, Launch at Login ✓, Quit. Settings
+  window (grouped Form): shortcut recorder (unregisters the global hotkey while recording;
+  warns if Carbon refuses a combo), login item, screen choice, Esc/focus-loss/peek toggles,
+  panel width/height, animation speed/bounciness, gesture on/off, start zone, swipe distance,
+  live trackpad preview (touch dots + shaded start zone), flip-Y escape hatch, scroll-blocking
+  status. Small main menu (About/Settings/Quit, Edit, Window) for those windows. Gesture
+  fallback: no multitouch → engine stays off, Settings says so, hotkey/hover/menu still work.
+  Non-notch screens show a visible 150×26 pill (verified by snapshot with `-forcePill`). App
+  icon generated by a CoreGraphics script (graphite squircle, black notch, green `>_`).
+  Release build: `build/NotchTerm.app` (Apple Development-signed, hardened runtime,
+  multitouch framework embedded), launch-checked via LaunchServices. Verified: selftest
+  (settings change resizes panel live 760→880, hotkey re-registers, Settings + status item
+  windows exist), 11 unit tests, 0 warnings Debug/Release/tests.
+- **Still unverified (needs the user on hardware):** see the final checklist given to the user
+  on 2026-10-01 — animation feel, closed-notch invisibility, gesture direction/thresholds,
+  scroll swallowing, focus/typing/IME/Esc, Spaces/full screen, external displays, login item,
+  Accessibility grant flow, Settings/Welcome visuals (SwiftUI can't be snapshotted here).
 
 ## Debug snapshots
 Screen Recording isn't granted to the CLI, but an app can render its own window. Debug builds
@@ -162,9 +188,12 @@ frontmost app at each step) and `-snapshot <dir>`: they type `ls /` into the she
   functions; hop with `MainActor.assumeIsolated` only when the callback is known to arrive
   on the main thread.
 - Target/scheme `terminal-application`; sources in `terminal-application/`.
-- Intended settings (the user owns these in Xcode): deployment target macOS 14.0,
-  `LSUIElement` = YES, App Sandbox OFF, Hardened Runtime ON, SPM packages SwiftTerm +
-  OpenMultitouchSupport. Check with `xcodebuild -showBuildSettings` if behaviour looks off.
+- Settings (now in the project): deployment target macOS 14.0, `LSUIElement` = YES, App Sandbox
+  OFF, Hardened Runtime ON, product name NotchTerm, SPM packages SwiftTerm (upToNextMajor
+  1.20.0) + OpenMultitouchSupport (upToNextMinor 3.0.3). Bundle id stays
+  `com.jasontio.terminal-application`.
+- Release build: `…build.sh`-style `xcodebuild -configuration Release`, then
+  `ditto <DerivedData>/Build/Products/Release/NotchTerm.app build/NotchTerm.app` (git-ignored).
 - Reference hardware: 14" MacBook Pro, built-in display 1512×982 pt @2x, 120 Hz; notch
   185×32 pt (left aux 665 pt, right aux 662 pt — not exactly centered). An external
   2560×1440 display (no notch) is usually the PRIMARY screen.

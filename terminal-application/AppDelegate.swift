@@ -15,6 +15,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let scrollBlocker = ScrollBlocker()
     let accessibility = AccessibilityPermission()
     private var onboarding: OnboardingWindowController?
+    private var settingsWindow: SettingsWindowController?
+    private var statusItem: StatusItemController?
+    private let touchPreview = TouchPreview()
     /// While the Settings window records a new shortcut, the old one must not fire.
     var isRecordingShortcut = false {
         didSet { applyHotKey() }
@@ -55,6 +58,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         settings.onChange = { [weak self] in self?.applySettings() }
         applySettings()
+        statusItem = StatusItemController(app: self)
+        NSApp.mainMenu = MainMenu.make(target: self)
         Self.logger.notice(
             "Launched. Multitouch gestures: \(gestures.isRunning ? "on" : "unavailable", privacy: .public); scroll blocking: \(self.scrollBlocker.isActive ? "on" : "waiting for Accessibility", privacy: .public)")
 
@@ -76,8 +81,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         controller?.state == .open
     }
 
+    var isHotKeyWorking: Bool {
+        isRecordingShortcut || hotKey?.isRegistered == true
+    }
+
     var areGesturesRunning: Bool {
         gestures?.isRunning ?? false
+    }
+
+    @objc func showSettings(_ sender: Any?) {
+        if settingsWindow == nil {
+            let view = SettingsView(
+                settings: settings, permission: accessibility, preview: touchPreview,
+                gesturesAvailable: { [weak self] in self?.areGesturesRunning ?? false },
+                hotKeyWorking: { [weak self] in self?.isHotKeyWorking ?? false },
+                onRecordingChange: { [weak self] recording in self?.isRecordingShortcut = recording },
+                showWelcome: { [weak self] in self?.showOnboarding() })
+            settingsWindow = SettingsWindowController(
+                rootView: view, permission: accessibility,
+                onVisibilityChange: { [weak self] visible in self?.setTouchPreview(visible) })
+        }
+        settingsWindow?.show()
+    }
+
+    /// Touch frames only flow to the preview while Settings is on screen.
+    private func setTouchPreview(_ enabled: Bool) {
+        if !enabled { isRecordingShortcut = false }
+        gestures?.onTouches = enabled ? { [weak self] touches in self?.touchPreview.touches = touches } : nil
+        if !enabled { touchPreview.touches = [] }
     }
 
     func showOnboarding() {
@@ -147,6 +178,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let size = CGSize(
             width: min(settings.panelWidth, screen.frame.width - 2 * NotchGeometry.margin),
             height: min(settings.panelHeight, screen.frame.height * 0.85))
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("-forcePill") {
+            let pill = NotchGeometry(screen: screen, expandedSize: size)
+            return NotchGeometry(screenFrame: pill.screenFrame,
+                                 notchRect: CGRect(x: pill.screenFrame.midX - NotchGeometry.pillWidth / 2,
+                                                   y: pill.screenFrame.maxY - 26,
+                                                   width: NotchGeometry.pillWidth, height: 26),
+                                 hasNotch: false, expandedSize: size)
+        }
+        #endif
         return NotchGeometry(screen: screen, expandedSize: size)
     }
 
