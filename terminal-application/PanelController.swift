@@ -46,6 +46,12 @@ final class PanelController {
         driver.animate(to: 0, with: Self.closeSpring)
     }
 
+    #if DEBUG
+    func debugJump(to value: CGFloat) {
+        progress = value
+    }
+    #endif
+
     func updateGeometry(_ newGeometry: NotchGeometry) {
         guard newGeometry != geometry else { return }
         geometry = newGeometry

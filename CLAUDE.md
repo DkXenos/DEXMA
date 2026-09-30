@@ -67,7 +67,7 @@ like a third-party app.
 ## Phases
 - [x] 1. Notch panel + global hotkey (Carbon, default ⌥`) toggling open/close with a spring. Plain black rounded rect.
 - [x] 2. NotchShape morphing from exact notch geometry to the expanded size.
-- [ ] 3. SwiftTerm persistent zsh inside the expanded panel.
+- [x] 3. SwiftTerm persistent zsh inside the expanded panel.
 - [ ] 4. Focus: key window when open, Esc closes, restore previous app's focus.
 - [ ] 5. GestureEngine: two touches starting in the top ~10% of the trackpad moving down drive progress interactively.
 - [ ] 6. CGEventTap to swallow scroll during the gesture + Accessibility permission onboarding.
@@ -90,6 +90,19 @@ update Progress below.
   flare into the top edge). Closed = notch size with 9 pt radius (a hair rounder than the
   physical notch so nothing peeks out). Launch-checked. Unverified: that the closed shape is
   truly invisible around the physical notch edge.
+- **Phase 3:** `ShellSession` owns ONE `LocalProcessTerminalView` running `/bin/zsh` as a login
+  shell (argv[0] `-zsh`), started at launch; respawned on exit (throttled to 1/s, screen reset
+  with RIS). `TerminalContainerView` keeps the terminal at a fixed frame (`NotchGeometry.terminalFrame`)
+  and clips it with a `CAShapeLayer` mask built from the same `NotchShape` each frame; text fades
+  in over progress 0.35→0.85; the container is hidden while fully closed. Verified: zsh child
+  process at launch, respawn after `kill -9`, no orphan shell after quit, and rendered
+  snapshots (see *Debug snapshots*). Unverified: typing (needs Phase 4 focus).
+
+## Debug snapshots
+Screen Recording isn't granted to the CLI, but an app can render its own window. Debug builds
+accept `-snapshot <dir>`: they type `ls /` into the shell, render the panel at progress
+0/0.15/0.5/1 to PNGs, and quit. Run the binary directly:
+`.../Debug/NotchTerm.app/Contents/MacOS/NotchTerm -snapshot /tmp/snap`, then view the PNGs.
 
 ## Project facts
 - Xcode 26.2, Swift 6.2 compiler in Swift 5 language mode, `SWIFT_DEFAULT_ACTOR_ISOLATION =
