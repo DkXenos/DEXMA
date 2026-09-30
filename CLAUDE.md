@@ -53,7 +53,7 @@ like a third-party app.
   and use the real signatures. For Apple APIs, check the SDK headers/`.swiftinterface`
   when unsure.
 - **Build after every change** and fix all errors AND warnings before saying you're done:
-  `xcodebuild -project terminal-application.xcodeproj -scheme terminal-application -configuration Debug -destination 'platform=macOS,arch=arm64' build 2>&1 | grep -E 'warning:|error:|BUILD (SUCCEEDED|FAILED)'`
+  `xcodebuild -project terminal-application.xcodeproj -scheme terminal-application -configuration Debug -destination 'platform=macOS,arch=arm64' -skipPackagePluginValidation -skipMacroValidation build 2>&1 | grep -E 'warning:|error:|BUILD (SUCCEEDED|FAILED)'`
   (While the project's deployment target is above 14.0, also build once with
   `MACOSX_DEPLOYMENT_TARGET=14.0` appended to catch availability errors.)
 - **Don't edit `project.pbxproj`** unless absolutely necessary. Adding/removing Swift files
@@ -65,13 +65,31 @@ like a third-party app.
   next phase without an OK. Tick the phase below when it's done.
 
 ## Phases
-- [ ] 1. Notch panel + global hotkey (Carbon, default ⌥`) toggling open/close with a spring. Plain black rounded rect. *(implemented, awaiting hardware test)*
-- [ ] 2. NotchShape morphing from exact notch geometry to the expanded size.
+- [x] 1. Notch panel + global hotkey (Carbon, default ⌥`) toggling open/close with a spring. Plain black rounded rect.
+- [x] 2. NotchShape morphing from exact notch geometry to the expanded size.
 - [ ] 3. SwiftTerm persistent zsh inside the expanded panel.
 - [ ] 4. Focus: key window when open, Esc closes, restore previous app's focus.
 - [ ] 5. GestureEngine: two touches starting in the top ~10% of the trackpad moving down drive progress interactively.
 - [ ] 6. CGEventTap to swallow scroll during the gesture + Accessibility permission onboarding.
 - [ ] 7. Polish: release velocity, peek state, Reduce Motion, launch at login (SMAppService), multi-display.
+- [ ] 8. Finished app: status item menu, Settings window, onboarding, gesture fallback, shell respawn, non-notch pill, app icon, Release build.
+
+The user asked (2026-10-01) to run phases 2–8 without stopping between them: per phase, read
+package sources, build to 0 errors/0 warnings, launch-check, `git commit -m "Phase N: …"`,
+update Progress below.
+
+## Progress
+- **Project setup (done by Claude with the user's OK):** SwiftTerm 1.20.0 + OpenMultitouchSupport
+  3.0.3 (4.x needs macOS 15), App Sandbox off, `LSUIElement`, macOS 14.0, product renamed
+  `NotchTerm.app`. SwiftTerm needs the Metal Toolchain (installed via
+  `xcodebuild -downloadComponent MetalToolchain`) and a build-plugin trust (Xcode asks once;
+  CLI builds pass `-skipPackagePluginValidation -skipMacroValidation`).
+- **Phase 1:** panel + ⌥` hotkey + display-link spring. Launch-checked (layer 26, frame centred
+  on the notch). Unverified: animation feel, hotkey on hardware.
+- **Phase 2:** `NotchShape` (animatable width/height/bottom radius/ear radius; concave ears
+  flare into the top edge). Closed = notch size with 9 pt radius (a hair rounder than the
+  physical notch so nothing peeks out). Launch-checked. Unverified: that the closed shape is
+  truly invisible around the physical notch edge.
 
 ## Project facts
 - Xcode 26.2, Swift 6.2 compiler in Swift 5 language mode, `SWIFT_DEFAULT_ACTOR_ISOLATION =

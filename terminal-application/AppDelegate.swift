@@ -7,7 +7,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var hotKey: HotKey?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        guard let screen = NotchGeometry.preferredScreen() else { return }
+        guard let screen = NotchGeometry.notchedScreen() else { return }
         let geometry = NotchGeometry(screen: screen)
         let panel = NotchPanel(frame: geometry.panelFrame)
         let controller = PanelController(panel: panel, geometry: geometry)
@@ -23,7 +23,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationDidChangeScreenParameters(_ notification: Notification) {
-        guard let screen = NotchGeometry.preferredScreen() else { return }
+        guard let screen = NotchGeometry.notchedScreen() else { return }
         controller?.updateGeometry(NotchGeometry(screen: screen))
     }
 
