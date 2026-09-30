@@ -15,25 +15,32 @@ struct NotchGeometry: Equatable {
     let hasNotch: Bool
     let expandedSize: CGSize
 
+    init(screenFrame: CGRect, notchRect: CGRect, hasNotch: Bool, expandedSize: CGSize) {
+        self.screenFrame = screenFrame
+        self.notchRect = notchRect
+        self.hasNotch = hasNotch
+        self.expandedSize = expandedSize
+    }
+
     init(screen: NSScreen, expandedSize: CGSize = defaultExpandedSize) {
         let frame = screen.frame
-        screenFrame = frame
-        self.expandedSize = expandedSize
         // The auxiliary areas are the menu bar strips left and right of the camera housing;
         // the notch is the gap between them. Both are nil on screens without a notch.
         if let left = screen.auxiliaryTopLeftArea, let right = screen.auxiliaryTopRightArea,
            screen.safeAreaInsets.top > 0 {
             let height = screen.safeAreaInsets.top
-            notchRect = CGRect(x: left.maxX, y: frame.maxY - height,
-                               width: right.minX - left.maxX, height: height)
-            hasNotch = true
+            self.init(screenFrame: frame,
+                      notchRect: CGRect(x: left.maxX, y: frame.maxY - height,
+                                        width: right.minX - left.maxX, height: height),
+                      hasNotch: true, expandedSize: expandedSize)
         } else {
             // Match the menu bar height so the pill sits inside it.
             let menuBar = frame.maxY - screen.visibleFrame.maxY
             let height = menuBar > 12 ? menuBar - 4 : 22
-            notchRect = CGRect(x: frame.midX - Self.pillWidth / 2, y: frame.maxY - height,
-                               width: Self.pillWidth, height: height)
-            hasNotch = false
+            self.init(screenFrame: frame,
+                      notchRect: CGRect(x: frame.midX - Self.pillWidth / 2, y: frame.maxY - height,
+                                        width: Self.pillWidth, height: height),
+                      hasNotch: false, expandedSize: expandedSize)
         }
     }
 

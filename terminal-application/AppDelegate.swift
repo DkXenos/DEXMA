@@ -6,6 +6,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var controller: PanelController?
     private var session: ShellSession?
     private var hotKey: HotKey?
+    private var gestures: GestureEngine?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         guard let screen = NotchGeometry.notchedScreen() else { return }
@@ -28,6 +29,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         hotKey = HotKey(keyCode: kVK_ANSI_Grave, modifiers: optionKey) { controller.toggle() }
         self.controller = controller
         self.session = session
+
+        let gestures = GestureEngine(controller: controller, session: session)
+        let gesturesStarted = gestures.start()  // No trackpad: stays off; the hotkey still works.
+        #if DEBUG
+        print("[launch] multitouch gestures running: \(gesturesStarted)")
+        #endif
+        self.gestures = gestures
         #if DEBUG
         DebugSnapshot.runIfRequested(panel: panel, controller: controller, session: session)
         #endif

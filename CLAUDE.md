@@ -69,7 +69,7 @@ like a third-party app.
 - [x] 2. NotchShape morphing from exact notch geometry to the expanded size.
 - [x] 3. SwiftTerm persistent zsh inside the expanded panel.
 - [x] 4. Focus: key window when open, Esc closes, restore previous app's focus.
-- [ ] 5. GestureEngine: two touches starting in the top ~10% of the trackpad moving down drive progress interactively.
+- [x] 5. GestureEngine: two touches starting in the top ~10% of the trackpad moving down drive progress interactively.
 - [ ] 6. CGEventTap to swallow scroll during the gesture + Accessibility permission onboarding.
 - [ ] 7. Polish: release velocity, peek state, Reduce Motion, launch at login (SMAppService), multi-display.
 - [ ] 8. Finished app: status item menu, Settings window, onboarding, gesture fallback, shell respawn, non-notch pill, app icon, Release build.
@@ -106,6 +106,18 @@ update Progress below.
   ⌘Q swallowed while the panel is key (would kill the shell); clicking another app closes the
   panel (resignKey). Verified with `-selftest` (key/first-responder/frontmost at each step).
   Unverified: real typing, IME, Esc and shortcuts on hardware.
+- **Phase 5:** `GestureRecognizer` (pure, `nonisolated`, unit-tested: 10 tests incl. geometry)
+  turns two-finger frames into began/changed(delta)/ended(velocity)/cancelled. Open = both
+  fingers land in the top `edgeZone` and move down; close = panel open, terminal scrolled to
+  the bottom and not in a full-screen program, fingers move up. Sideways, wrong-way and 3+
+  fingers are ignored until all fingers lift. `delta` is added to the progress on screen when
+  the fingers landed (grab mid-animation works), rubber-banded past 0/1; release projects
+  ~0.2 s ahead with the finger velocity and hands that velocity to the spring.
+  `GestureEngine` reads OpenMultitouchSupport's `touchDataStream` (states making/touching =
+  in contact) on the main actor. Verified: multitouch device found and listening at launch
+  (no permission needed). Unverified: **y orientation** (assumed y = 1 at the far/top edge,
+  from MultitouchSupport's normalizedPosition; `GestureEngine.invertsY` flips it), feel of
+  thresholds, real-finger accuracy.
 
 ## Debug snapshots
 Screen Recording isn't granted to the CLI, but an app can render its own window. Debug builds
