@@ -6,7 +6,7 @@
 //
 
 import Testing
-@testable import terminal_application
+@testable import NotchTerm
 
 struct terminal_applicationTests {
 
