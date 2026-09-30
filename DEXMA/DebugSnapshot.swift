@@ -12,6 +12,11 @@ enum DebugSnapshot {
             selfTest(panel: panel, controller: controller, session: session)
             return
         }
+        if let index = arguments.firstIndex(of: "-effecttest"), index + 1 < arguments.count {
+            EffectTest.run(panel: panel, controller: controller, session: session,
+                           dir: URL(fileURLWithPath: arguments[index + 1]))
+            return
+        }
         guard let index = arguments.firstIndex(of: "-snapshot"), index + 1 < arguments.count else {
             return
         }
