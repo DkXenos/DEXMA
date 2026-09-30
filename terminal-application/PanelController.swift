@@ -4,16 +4,16 @@ import SwiftUI
 
 enum PanelState {
     case closed
+    /// Pointer hovering the notch: swollen slightly, a click opens.
+    case peek
     case open
 }
 
 /// Single source of truth for the panel: `progress` (0 = notch, 1 = expanded) and state.
-/// The hotkey (and, from Phase 5, the gesture) drive it; views only read it.
+/// The hotkey, the gesture and the pointer all drive it; views only read it.
 @Observable
 final class PanelController {
-    // Open with a slight Dynamic Island overshoot; close without bounce so it settles fast.
-    static let openSpring = Spring(duration: 0.45, bounce: 0.2)
-    static let closeSpring = Spring(duration: 0.35, bounce: 0)
+    static let peekProgress: CGFloat = 0.06
 
     private(set) var progress: CGFloat = 0
     private(set) var state: PanelState = .closed
@@ -21,11 +21,18 @@ final class PanelController {
 
     @ObservationIgnored var escClosesPanel = true
     @ObservationIgnored var closesOnFocusLoss = true
+    /// Open spring; close uses the same speed with no bounce so it settles fast.
+    @ObservationIgnored var animationDuration: Double = 0.45
+    @ObservationIgnored var bounce: Double = 0.2
+    /// Asked for fresh geometry right before opening from fully closed (e.g. the pointer's
+    /// screen), so the panel can move while it's invisible.
+    @ObservationIgnored var geometryForOpening: (() -> NotchGeometry?)?
 
     private let panel: NotchPanel
     private let session: ShellSession
     private let driver: SpringDriver
     @ObservationIgnored private var previousApp: NSRunningApplication?
+    @ObservationIgnored private var interactionBase: CGFloat = 0
 
     init(panel: NotchPanel, session: ShellSession, geometry: NotchGeometry) {
         self.panel = panel
@@ -37,7 +44,24 @@ final class PanelController {
         panel.onEscape = { [weak self] in self?.handleEscape() ?? false }
         panel.onCloseShortcut = { [weak self] in self?.close() }
         panel.onResignKey = { [weak self] in self?.panelDidResignKey() }
+        panel.onMouseDown = { [weak self] in self?.handleMouseDown() ?? false }
     }
+
+    // MARK: Springs
+
+    private var reduceMotion: Bool {
+        NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+    }
+
+    private var openSpring: Spring {
+        reduceMotion ? Spring(duration: 0.2, bounce: 0) : Spring(duration: animationDuration, bounce: bounce)
+    }
+
+    private var closeSpring: Spring {
+        reduceMotion ? Spring(duration: 0.2, bounce: 0) : Spring(duration: animationDuration * 0.8, bounce: 0)
+    }
+
+    // MARK: Open / close
 
     func toggle() {
         if state == .open { close() } else { open() }
@@ -45,6 +69,7 @@ final class PanelController {
 
     func open(initialVelocity: CGFloat? = nil) {
         if state != .open {
+            moveToOpeningScreenIfClosed()
             let frontmost = NSWorkspace.shared.frontmostApplication
             if frontmost != NSRunningApplication.current { previousApp = frontmost }
             state = .open
@@ -56,7 +81,7 @@ final class PanelController {
             panel.makeKey()
             panel.makeFirstResponder(session.terminalView)
         }
-        driver.animate(to: 1, with: Self.openSpring, initialVelocity: initialVelocity)
+        driver.animate(to: 1, with: openSpring, initialVelocity: initialVelocity)
     }
 
     func close(initialVelocity: CGFloat? = nil) {
@@ -67,15 +92,33 @@ final class PanelController {
             panel.allowsKey = false
             restoreFocus()
         }
-        driver.animate(to: 0, with: Self.closeSpring, initialVelocity: initialVelocity)
+        driver.animate(to: 0, with: closeSpring, initialVelocity: initialVelocity)
+    }
+
+    /// Pointer entered or left the notch.
+    func setHovering(_ hovering: Bool) {
+        if hovering, state == .closed, progress < 0.2 {
+            state = .peek
+            panel.ignoresMouseEvents = false  // So the click that opens lands on us.
+            driver.animate(to: Self.peekProgress, with: openSpring)
+        } else if !hovering, state == .peek {
+            state = .closed
+            panel.ignoresMouseEvents = true
+            driver.animate(to: 0, with: closeSpring)
+        }
+    }
+
+    private func handleMouseDown() -> Bool {
+        guard state == .peek else { return false }
+        open()
+        return true
     }
 
     // MARK: Interactive (gesture)
 
-    @ObservationIgnored private var interactionBase: CGFloat = 0
-
     /// Fingers took hold. Start from whatever is on screen, even mid-animation.
     func beginInteraction() {
+        if state != .open { moveToOpeningScreenIfClosed() }
         interactionBase = progress
         session.container.isHidden = false
         driver.set(progress)
@@ -105,11 +148,7 @@ final class PanelController {
         return value
     }
 
-    #if DEBUG
-    func debugJump(to value: CGFloat) {
-        progress = value
-    }
-    #endif
+    // MARK: Geometry
 
     func updateGeometry(_ newGeometry: NotchGeometry) {
         guard newGeometry != geometry else { return }
@@ -117,6 +156,17 @@ final class PanelController {
         panel.setFrame(newGeometry.panelFrame, display: true)
         session.resize(to: newGeometry.terminalFrame.size)
     }
+
+    private func moveToOpeningScreenIfClosed() {
+        guard progress <= Self.peekProgress + 0.01, let fresh = geometryForOpening?() else { return }
+        updateGeometry(fresh)
+    }
+
+    #if DEBUG
+    func debugJump(to value: CGFloat) {
+        progress = value
+    }
+    #endif
 
     // MARK: Focus
 
@@ -130,9 +180,9 @@ final class PanelController {
     }
 
     private func didSettle(at value: CGFloat) {
+        guard value == 0, state == .closed else { return }
         // Belt and braces: if the panel somehow kept key status, ordering it out drops it and
         // AppKit gives the keyboard back to the frontmost app. Closed, it's invisible anyway.
-        guard value == 0, state == .closed, !driver.isAnimating else { return }
         if panel.isKeyWindow {
             panel.orderOut(nil)
             panel.orderFrontRegardless()

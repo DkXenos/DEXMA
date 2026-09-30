@@ -115,4 +115,15 @@ struct NotchGeometryTests {
         #expect(abs(open.width - (680 + 2 * 12)) < 0.01)  // Body plus both ears.
         #expect(rect.contains(open))
     }
+
+    @Test func pillOnScreensWithoutNotchIsRoundedAndCentered() {
+        let screen = CGRect(x: 0, y: 0, width: 2560, height: 1440)
+        let pill = CGRect(x: 1280 - 75, y: 1440 - 24, width: 150, height: 24)
+        let geometry = NotchGeometry(screenFrame: screen, notchRect: pill, hasNotch: false,
+                                     expandedSize: CGSize(width: 680, height: 400))
+        let shape = geometry.shape(at: 0)
+        #expect(shape.bottomRadius == 12)  // Fully rounded ends.
+        #expect(abs(geometry.panelFrame.midX - 1280) <= 0.5)
+        #expect(geometry.panelFrame.maxY == 1440)
+    }
 }

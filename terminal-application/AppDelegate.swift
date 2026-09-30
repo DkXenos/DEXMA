@@ -1,26 +1,32 @@
 import AppKit
-import Carbon.HIToolbox
 import SwiftUI
 import os
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private static let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "NotchTerm",
                                        category: "App")
+    let settings = AppSettings()
     private var controller: PanelController?
     private var session: ShellSession?
     private var hotKey: HotKey?
+    private var registeredCombo: KeyCombo?
     private var gestures: GestureEngine?
+    private let hover = HoverMonitor()
     private let scrollBlocker = ScrollBlocker()
-    private let accessibility = AccessibilityPermission()
+    let accessibility = AccessibilityPermission()
     private var onboarding: OnboardingWindowController?
+    /// While the Settings window records a new shortcut, the old one must not fire.
+    var isRecordingShortcut = false {
+        didSet { applyHotKey() }
+    }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        guard let screen = NotchGeometry.notchedScreen() else { return }
-        let geometry = NotchGeometry(screen: screen)
+        guard let geometry = makeGeometry() else { return }
         // Pre-warm: zsh starts now and outlives every open/close.
         let session = ShellSession(size: geometry.terminalFrame.size)
         let panel = NotchPanel(frame: geometry.panelFrame)
         let controller = PanelController(panel: panel, session: session, geometry: geometry)
+        controller.geometryForOpening = { [weak self] in self?.makeGeometry() }
 
         let hostingView = NSHostingView(
             rootView: NotchContentView(controller: controller, session: session))
@@ -29,21 +35,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // insets feed back into SwiftUI layout.
         hostingView.safeAreaRegions = []
         panel.contentView = hostingView
+        panel.acceptsMouseMovedEvents = true  // For the hover monitor while peeking.
         // Pre-warm: the panel stays on screen from launch. Closed, it hides under the notch.
         panel.orderFrontRegardless()
-
-        hotKey = HotKey(keyCode: kVK_ANSI_Grave, modifiers: optionKey) { controller.toggle() }
         self.controller = controller
         self.session = session
 
         let gestures = GestureEngine(controller: controller, session: session)
         gestures.scrollGate = scrollBlocker.gate
-        let gesturesStarted = gestures.start()  // No trackpad: stays off; the hotkey still works.
         self.gestures = gestures
         // Without Accessibility this waits (polling) and starts by itself once it's granted.
         scrollBlocker.startWhenPermitted()
+
+        hover.zone = { [weak controller] in
+            guard let controller else { return .zero }
+            return Self.hoverZone(controller)
+        }
+        hover.onChange = { [weak controller] inside in controller?.setHovering(inside) }
+
+        settings.onChange = { [weak self] in self?.applySettings() }
+        applySettings()
         Self.logger.notice(
-            "Launched. Multitouch gestures: \(gesturesStarted ? "on" : "unavailable", privacy: .public); scroll blocking: \(self.scrollBlocker.isActive ? "on" : "waiting for Accessibility", privacy: .public)")
+            "Launched. Multitouch gestures: \(gestures.isRunning ? "on" : "unavailable", privacy: .public); scroll blocking: \(self.scrollBlocker.isActive ? "on" : "waiting for Accessibility", privacy: .public)")
 
         if !UserDefaults.standard.bool(forKey: "didShowOnboarding") {
             showOnboarding()
@@ -53,18 +66,102 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         #endif
     }
 
+    // MARK: Actions (menu bar item)
+
+    func togglePanel() {
+        controller?.toggle()
+    }
+
+    var isPanelOpen: Bool {
+        controller?.state == .open
+    }
+
+    var areGesturesRunning: Bool {
+        gestures?.isRunning ?? false
+    }
+
     func showOnboarding() {
         if onboarding == nil {
-            onboarding = OnboardingWindowController(permission: accessibility, shortcut: "⌥`") {
+            onboarding = OnboardingWindowController(permission: accessibility,
+                                                    shortcut: settings.hotKey.display) {
                 UserDefaults.standard.set(true, forKey: "didShowOnboarding")
             }
         }
         onboarding?.show()
     }
 
+    // MARK: Settings
+
+    private func applySettings() {
+        applyHotKey()
+        guard let controller, let gestures else { return }
+        controller.escClosesPanel = settings.escClosesPanel
+        controller.closesOnFocusLoss = settings.closesOnFocusLoss
+        controller.animationDuration = settings.animationDuration
+        controller.bounce = settings.bounce
+        if let geometry = makeGeometry() { controller.updateGeometry(geometry) }
+
+        gestures.parameters = GestureParameters(edgeZone: settings.edgeZone,
+                                                triggerDistance: settings.triggerDistance)
+        gestures.invertsY = settings.invertTrackpadY
+        if settings.gesturesEnabled {
+            gestures.start()  // No trackpad: stays off; the hotkey still works.
+        } else {
+            gestures.stop()
+        }
+        if settings.hoverToPeek { hover.start() } else { hover.stop() }
+    }
+
+    private func applyHotKey() {
+        guard let controller else { return }
+        if isRecordingShortcut {
+            hotKey = nil
+            registeredCombo = nil
+            return
+        }
+        guard registeredCombo != settings.hotKey else { return }
+        hotKey = nil  // Unregister the old one first; Carbon refuses duplicates.
+        hotKey = HotKey(keyCode: Int(settings.hotKey.keyCode),
+                        modifiers: Int(settings.hotKey.carbonModifiers)) { [weak controller] in
+            controller?.toggle()
+        }
+        registeredCombo = settings.hotKey
+    }
+
+    // MARK: Screens
+
+    private func openingScreen() -> NSScreen? {
+        switch settings.display {
+        case .notched:
+            return NotchGeometry.notchedScreen()
+        case .pointer:
+            let pointer = NSEvent.mouseLocation
+            return NSScreen.screens.first { NSMouseInRect(pointer, $0.frame, false) }
+                ?? NotchGeometry.notchedScreen()
+        }
+    }
+
+    private func makeGeometry() -> NotchGeometry? {
+        guard let screen = openingScreen() else { return nil }
+        // Never wider or taller than the screen allows (the panel hangs from the top edge).
+        let size = CGSize(
+            width: min(settings.panelWidth, screen.frame.width - 2 * NotchGeometry.margin),
+            height: min(settings.panelHeight, screen.frame.height * 0.85))
+        return NotchGeometry(screen: screen, expandedSize: size)
+    }
+
+    /// The notch plus a little slack; while peeking, the swollen shape too, so the pointer
+    /// doesn't flicker in and out at its edge.
+    private static func hoverZone(_ controller: PanelController) -> CGRect {
+        let notch = controller.geometry.notchRect
+        let grow: CGFloat = controller.state == .peek ? 24 : 6
+        return CGRect(x: notch.minX - grow, y: notch.minY - grow,
+                      width: notch.width + 2 * grow, height: notch.height + grow + 1)
+    }
+
     func applicationDidChangeScreenParameters(_ notification: Notification) {
-        guard let screen = NotchGeometry.notchedScreen() else { return }
-        controller?.updateGeometry(NotchGeometry(screen: screen))
+        guard let controller, controller.state != .open, let geometry = makeGeometry() else { return }
+        controller.updateGeometry(geometry)
     }
 
     func applicationSupportsSecureRestorableState(_ app: NSApplication) -> Bool {

@@ -34,6 +34,14 @@ enum DebugSnapshot {
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
             report("launch")
+            controller.setHovering(true)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
+                report("peek settled")
+                controller.setHovering(false)
+            }
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.6) {
+            report("unpeek settled")
             controller.open()
             report("open requested")
             DispatchQueue.main.asyncAfter(deadline: .now() + 1) {

@@ -71,7 +71,7 @@ like a third-party app.
 - [x] 4. Focus: key window when open, Esc closes, restore previous app's focus.
 - [x] 5. GestureEngine: two touches starting in the top ~10% of the trackpad moving down drive progress interactively.
 - [x] 6. CGEventTap to swallow scroll during the gesture + Accessibility permission onboarding.
-- [ ] 7. Polish: release velocity, peek state, Reduce Motion, launch at login (SMAppService), multi-display.
+- [x] 7. Polish: release velocity, peek state, Reduce Motion, launch at login (SMAppService), multi-display.
 - [ ] 8. Finished app: status item menu, Settings window, onboarding, gesture fallback, shell respawn, non-notch pill, app icon, Release build.
 
 The user asked (2026-10-01) to run phases 2–8 without stopping between them: per phase, read
@@ -136,6 +136,17 @@ update Progress below.
   plain `defaults` reads the stale sandbox container from the old template — pass the plist path.
   zsh's `log` is a builtin: use `/usr/bin/log show --predicate 'subsystem == "com.jasontio.terminal-application"'`.
   `cacheDisplay` can't render SwiftUI text, so `-snapshot` only covers the panel.
+- **Phase 7:** `AppSettings` (@Observable, UserDefaults, `onChange` → `AppDelegate.applySettings`
+  re-applies everything live). Release velocity feeds the spring (Phase 5). **Peek**:
+  `HoverMonitor` (global + local mouse-moved monitors, no permission) → pointer over the notch
+  swells it to progress 0.06 and makes it clickable; click opens. **Reduce Motion**: 0.2 s
+  springs without bounce. **Launch at login**: `LoginItem` (SMAppService.mainApp; opens Login
+  Items settings if approval is required). **Multi-display**: `DisplayChoice` notched (default)
+  or pointer — geometry is re-resolved right before opening from fully closed, so the panel
+  moves while invisible; panel size is clamped to the screen. Verified: `-selftest` peek →
+  0.06 & clickable → closed & click-through; 11 unit tests (incl. pill geometry). Unverified:
+  hover feel, Reduce Motion, login item registration (not exercised to avoid touching the
+  user's login items), opening on an external display.
 
 ## Debug snapshots
 Screen Recording isn't granted to the CLI, but an app can render its own window. Debug builds
