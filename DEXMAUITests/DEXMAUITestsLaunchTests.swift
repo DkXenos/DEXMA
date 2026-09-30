@@ -1,13 +1,13 @@
 //
-//  terminal_applicationUITestsLaunchTests.swift
-//  terminal-applicationUITests
+//  DEXMAUITestsLaunchTests.swift
+//  DEXMAUITests
 //
 //  Created by Jason TIo on 01/10/26.
 //
 
 import XCTest
 
-final class terminal_applicationUITestsLaunchTests: XCTestCase {
+final class DEXMAUITestsLaunchTests: XCTestCase {
 
     override class var runsForEachTargetApplicationUIConfiguration: Bool {
         true

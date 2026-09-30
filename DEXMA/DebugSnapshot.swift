@@ -2,7 +2,7 @@
 import AppKit
 import SwiftTerm
 
-/// Debug-only visual check: `NotchTerm -snapshot <dir>` renders the panel at a few progress
+/// Debug-only visual check: `DEXMA -snapshot <dir>` renders the panel at a few progress
 /// values into PNGs, then quits. An app may render its own windows without Screen Recording
 /// permission, so this works from the command line.
 enum DebugSnapshot {
@@ -16,7 +16,7 @@ enum DebugSnapshot {
             return
         }
         let directory = URL(fileURLWithPath: arguments[index + 1])
-        session.terminalView.process.send(data: ArraySlice(Array("clear; echo NotchTerm; ls /\r".utf8)))
+        session.terminalView.process.send(data: ArraySlice(Array("clear; echo DEXMA; ls /\r".utf8)))
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
             for progress in [0, 0.15, 0.5, 1] as [CGFloat] {
                 controller.debugJump(to: progress)
@@ -26,7 +26,7 @@ enum DebugSnapshot {
         }
     }
 
-    /// `NotchTerm -selftest`: opens and closes via the controller and prints focus state.
+    /// `DEXMA -selftest`: opens and closes via the controller and prints focus state.
     private static func selfTest(panel: NSPanel, controller: PanelController, session: ShellSession) {
         func report(_ label: String) {
             let responder = panel.firstResponder === session.terminalView ? "terminal" : "\(panel.firstResponder.map { type(of: $0) } as Any)"

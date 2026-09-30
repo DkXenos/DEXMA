@@ -11,7 +11,7 @@ nonisolated final class ScrollGate: Sendable {
 
     private let state = OSAllocatedUnfairLock(initialState: State())
 
-    /// `swipeCompleted`: the fingers just lifted from a real NotchTerm swipe, so the momentum
+    /// `swipeCompleted`: the fingers just lifted from a real DEXMA swipe, so the momentum
     /// scroll macOS generates afterwards belongs to it too.
     func setCapturing(_ capturing: Bool, swipeCompleted: Bool = false) {
         state.withLock { state in
@@ -30,7 +30,7 @@ nonisolated final class ScrollGate: Sendable {
     }
 }
 
-/// Swallows trackpad scroll events while a NotchTerm swipe is in progress, so the window under
+/// Swallows trackpad scroll events while a DEXMA swipe is in progress, so the window under
 /// the cursor doesn't scroll along. Needs Accessibility (an event tap that drops events); until
 /// that's granted it polls, and starts by itself the moment it is — no relaunch.
 final class ScrollBlocker {
@@ -38,7 +38,7 @@ final class ScrollBlocker {
     private(set) var isActive = false
     var onActiveChange: ((Bool) -> Void)?
     private var pollTimer: Timer?
-    private static let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "NotchTerm",
+    private static let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "DEXMA",
                                        category: "ScrollBlocker")
 
     func startWhenPermitted() {
@@ -74,7 +74,7 @@ final class ScrollBlocker {
             CGEvent.tapEnable(tap: port, enable: true)
             CFRunLoopRun()
         }
-        thread.name = "NotchTerm scroll tap"
+        thread.name = "DEXMA scroll tap"
         thread.qualityOfService = .userInteractive
         thread.start()
         isActive = true

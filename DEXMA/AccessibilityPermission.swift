@@ -27,7 +27,7 @@ final class AccessibilityPermission {
         if granted != isGranted { isGranted = granted }
     }
 
-    /// Adds NotchTerm to the Accessibility list (with the system prompt) and opens the pane.
+    /// Adds DEXMA to the Accessibility list (with the system prompt) and opens the pane.
     func requestAccess() {
         // The option key is a CF global; its string value avoids a non-Sendable global.
         _ = AXIsProcessTrustedWithOptions(["AXTrustedCheckOptionPrompt": true] as CFDictionary)

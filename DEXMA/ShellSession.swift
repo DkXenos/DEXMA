@@ -42,7 +42,7 @@ final class ShellSession: NSObject, LocalProcessTerminalViewDelegate {
     private func start() {
         lastStart = Date()
         var environment = Terminal.getEnvironmentVariables(termName: "xterm-256color", trueColor: true)
-        environment.append("TERM_PROGRAM=NotchTerm")
+        environment.append("TERM_PROGRAM=DEXMA")
         environment.append("SHELL=\(Self.shell)")
         if let path = ProcessInfo.processInfo.environment["PATH"] {
             environment.append("PATH=\(path)")

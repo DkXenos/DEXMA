@@ -74,7 +74,7 @@ final class PanelController {
             if frontmost != NSRunningApplication.current { previousApp = frontmost }
             state = .open
             panel.ignoresMouseEvents = false
-            // Key without activating NotchTerm: the frontmost app keeps its menu bar, and
+            // Key without activating DEXMA: the frontmost app keeps its menu bar, and
             // typing goes straight to the shell.
             panel.allowsKey = true
             session.container.isHidden = false

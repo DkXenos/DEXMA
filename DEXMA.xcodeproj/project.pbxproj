@@ -17,37 +17,37 @@
 			containerPortal = B065708F306D7D9300FCB340 /* Project object */;
 			proxyType = 1;
 			remoteGlobalIDString = B0657096306D7D9300FCB340;
-			remoteInfo = "terminal-application";
+			remoteInfo = DEXMA;
 		};
 		B06570B1306D7D9500FCB340 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = B065708F306D7D9300FCB340 /* Project object */;
 			proxyType = 1;
 			remoteGlobalIDString = B0657096306D7D9300FCB340;
-			remoteInfo = "terminal-application";
+			remoteInfo = DEXMA;
 		};
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
-		B0657097306D7D9300FCB340 /* terminal-application.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; name = "terminal-application.app"; path = NotchTerm.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		B06570A6306D7D9500FCB340 /* terminal-applicationTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "terminal-applicationTests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
-		B06570B0306D7D9500FCB340 /* terminal-applicationUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "terminal-applicationUITests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
+		B0657097306D7D9300FCB340 /* DEXMA.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = DEXMA.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		B06570A6306D7D9500FCB340 /* DEXMATests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = DEXMATests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		B06570B0306D7D9500FCB340 /* DEXMAUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = DEXMAUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
-		B0657099306D7D9300FCB340 /* terminal-application */ = {
+		B0657099306D7D9300FCB340 /* DEXMA */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
-			path = "terminal-application";
+			path = DEXMA;
 			sourceTree = "<group>";
 		};
-		B06570A9306D7D9500FCB340 /* terminal-applicationTests */ = {
+		B06570A9306D7D9500FCB340 /* DEXMATests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
-			path = "terminal-applicationTests";
+			path = DEXMATests;
 			sourceTree = "<group>";
 		};
-		B06570B3306D7D9500FCB340 /* terminal-applicationUITests */ = {
+		B06570B3306D7D9500FCB340 /* DEXMAUITests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
-			path = "terminal-applicationUITests";
+			path = DEXMAUITests;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -82,9 +82,9 @@
 		B065708E306D7D9300FCB340 = {
 			isa = PBXGroup;
 			children = (
-				B0657099306D7D9300FCB340 /* terminal-application */,
-				B06570A9306D7D9500FCB340 /* terminal-applicationTests */,
-				B06570B3306D7D9500FCB340 /* terminal-applicationUITests */,
+				B0657099306D7D9300FCB340 /* DEXMA */,
+				B06570A9306D7D9500FCB340 /* DEXMATests */,
+				B06570B3306D7D9500FCB340 /* DEXMAUITests */,
 				B0657098306D7D9300FCB340 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -92,9 +92,9 @@
 		B0657098306D7D9300FCB340 /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				B0657097306D7D9300FCB340 /* terminal-application.app */,
-				B06570A6306D7D9500FCB340 /* terminal-applicationTests.xctest */,
-				B06570B0306D7D9500FCB340 /* terminal-applicationUITests.xctest */,
+				B0657097306D7D9300FCB340 /* DEXMA.app */,
+				B06570A6306D7D9500FCB340 /* DEXMATests.xctest */,
+				B06570B0306D7D9500FCB340 /* DEXMAUITests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -102,9 +102,9 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		B0657096306D7D9300FCB340 /* terminal-application */ = {
+		B0657096306D7D9300FCB340 /* DEXMA */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = B06570BA306D7D9500FCB340 /* Build configuration list for PBXNativeTarget "terminal-application" */;
+			buildConfigurationList = B06570BA306D7D9500FCB340 /* Build configuration list for PBXNativeTarget "DEXMA" */;
 			buildPhases = (
 				B0657093306D7D9300FCB340 /* Sources */,
 				B0657094306D7D9300FCB340 /* Frameworks */,
@@ -115,20 +115,20 @@
 			dependencies = (
 			);
 			fileSystemSynchronizedGroups = (
-				B0657099306D7D9300FCB340 /* terminal-application */,
+				B0657099306D7D9300FCB340 /* DEXMA */,
 			);
-			name = "terminal-application";
+			name = DEXMA;
 			packageProductDependencies = (
 				B0657F03306D7D9500FCB340 /* SwiftTerm */,
 				B0657F04306D7D9500FCB340 /* OpenMultitouchSupport */,
 			);
-			productName = "terminal-application";
-			productReference = B0657097306D7D9300FCB340 /* terminal-application.app */;
+			productName = DEXMA;
+			productReference = B0657097306D7D9300FCB340 /* DEXMA.app */;
 			productType = "com.apple.product-type.application";
 		};
-		B06570A5306D7D9500FCB340 /* terminal-applicationTests */ = {
+		B06570A5306D7D9500FCB340 /* DEXMATests */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = B06570BD306D7D9500FCB340 /* Build configuration list for PBXNativeTarget "terminal-applicationTests" */;
+			buildConfigurationList = B06570BD306D7D9500FCB340 /* Build configuration list for PBXNativeTarget "DEXMATests" */;
 			buildPhases = (
 				B06570A2306D7D9500FCB340 /* Sources */,
 				B06570A3306D7D9500FCB340 /* Frameworks */,
@@ -140,18 +140,18 @@
 				B06570A8306D7D9500FCB340 /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
-				B06570A9306D7D9500FCB340 /* terminal-applicationTests */,
+				B06570A9306D7D9500FCB340 /* DEXMATests */,
 			);
-			name = "terminal-applicationTests";
+			name = DEXMATests;
 			packageProductDependencies = (
 			);
-			productName = "terminal-applicationTests";
-			productReference = B06570A6306D7D9500FCB340 /* terminal-applicationTests.xctest */;
+			productName = DEXMATests;
+			productReference = B06570A6306D7D9500FCB340 /* DEXMATests.xctest */;
 			productType = "com.apple.product-type.bundle.unit-test";
 		};
-		B06570AF306D7D9500FCB340 /* terminal-applicationUITests */ = {
+		B06570AF306D7D9500FCB340 /* DEXMAUITests */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = B06570C0306D7D9500FCB340 /* Build configuration list for PBXNativeTarget "terminal-applicationUITests" */;
+			buildConfigurationList = B06570C0306D7D9500FCB340 /* Build configuration list for PBXNativeTarget "DEXMAUITests" */;
 			buildPhases = (
 				B06570AC306D7D9500FCB340 /* Sources */,
 				B06570AD306D7D9500FCB340 /* Frameworks */,
@@ -163,13 +163,13 @@
 				B06570B2306D7D9500FCB340 /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
-				B06570B3306D7D9500FCB340 /* terminal-applicationUITests */,
+				B06570B3306D7D9500FCB340 /* DEXMAUITests */,
 			);
-			name = "terminal-applicationUITests";
+			name = DEXMAUITests;
 			packageProductDependencies = (
 			);
-			productName = "terminal-applicationUITests";
-			productReference = B06570B0306D7D9500FCB340 /* terminal-applicationUITests.xctest */;
+			productName = DEXMAUITests;
+			productReference = B06570B0306D7D9500FCB340 /* DEXMAUITests.xctest */;
 			productType = "com.apple.product-type.bundle.ui-testing";
 		};
 /* End PBXNativeTarget section */
@@ -195,7 +195,7 @@
 					};
 				};
 			};
-			buildConfigurationList = B0657092306D7D9300FCB340 /* Build configuration list for PBXProject "terminal-application" */;
+			buildConfigurationList = B0657092306D7D9300FCB340 /* Build configuration list for PBXProject "DEXMA" */;
 			developmentRegion = en;
 			hasScannedForEncodings = 0;
 			knownRegions = (
@@ -213,9 +213,9 @@
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				B0657096306D7D9300FCB340 /* terminal-application */,
-				B06570A5306D7D9500FCB340 /* terminal-applicationTests */,
-				B06570AF306D7D9500FCB340 /* terminal-applicationUITests */,
+				B0657096306D7D9300FCB340 /* DEXMA */,
+				B06570A5306D7D9500FCB340 /* DEXMATests */,
+				B06570AF306D7D9500FCB340 /* DEXMAUITests */,
 			);
 		};
 /* End PBXProject section */
@@ -271,12 +271,12 @@
 /* Begin PBXTargetDependency section */
 		B06570A8306D7D9500FCB340 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
-			target = B0657096306D7D9300FCB340 /* terminal-application */;
+			target = B0657096306D7D9300FCB340 /* DEXMA */;
 			targetProxy = B06570A7306D7D9500FCB340 /* PBXContainerItemProxy */;
 		};
 		B06570B2306D7D9500FCB340 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
-			target = B0657096306D7D9300FCB340 /* terminal-application */;
+			target = B0657096306D7D9300FCB340 /* DEXMA */;
 			targetProxy = B06570B1306D7D9500FCB340 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
@@ -415,6 +415,7 @@
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = DEXMA;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.developer-tools";
 				INFOPLIST_KEY_LSUIElement = YES;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
@@ -424,7 +425,7 @@
 				);
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.jasontio.terminal-application";
-				PRODUCT_NAME = NotchTerm;
+				PRODUCT_NAME = DEXMA;
 				REGISTER_APP_GROUPS = YES;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
@@ -448,6 +449,7 @@
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = DEXMA;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.developer-tools";
 				INFOPLIST_KEY_LSUIElement = YES;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
@@ -457,7 +459,7 @@
 				);
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.jasontio.terminal-application";
-				PRODUCT_NAME = NotchTerm;
+				PRODUCT_NAME = DEXMA;
 				REGISTER_APP_GROUPS = YES;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
@@ -485,7 +487,7 @@
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/NotchTerm.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/NotchTerm";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/DEXMA.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/DEXMA";
 			};
 			name = Debug;
 		};
@@ -506,7 +508,7 @@
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/NotchTerm.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/NotchTerm";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/DEXMA.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/DEXMA";
 			};
 			name = Release;
 		};
@@ -525,7 +527,7 @@
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
-				TEST_TARGET_NAME = "terminal-application";
+				TEST_TARGET_NAME = DEXMA;
 			};
 			name = Debug;
 		};
@@ -544,14 +546,14 @@
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
-				TEST_TARGET_NAME = "terminal-application";
+				TEST_TARGET_NAME = DEXMA;
 			};
 			name = Release;
 		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		B0657092306D7D9300FCB340 /* Build configuration list for PBXProject "terminal-application" */ = {
+		B0657092306D7D9300FCB340 /* Build configuration list for PBXProject "DEXMA" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				B06570B8306D7D9500FCB340 /* Debug */,
@@ -560,7 +562,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		B06570BA306D7D9500FCB340 /* Build configuration list for PBXNativeTarget "terminal-application" */ = {
+		B06570BA306D7D9500FCB340 /* Build configuration list for PBXNativeTarget "DEXMA" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				B06570BB306D7D9500FCB340 /* Debug */,
@@ -569,7 +571,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		B06570BD306D7D9500FCB340 /* Build configuration list for PBXNativeTarget "terminal-applicationTests" */ = {
+		B06570BD306D7D9500FCB340 /* Build configuration list for PBXNativeTarget "DEXMATests" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				B06570BE306D7D9500FCB340 /* Debug */,
@@ -578,7 +580,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		B06570C0306D7D9500FCB340 /* Build configuration list for PBXNativeTarget "terminal-applicationUITests" */ = {
+		B06570C0306D7D9500FCB340 /* Build configuration list for PBXNativeTarget "DEXMAUITests" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				B06570C1306D7D9500FCB340 /* Debug */,

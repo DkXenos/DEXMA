@@ -1,4 +1,4 @@
-# NotchTerm
+# DEXMA
 
 A hidden terminal that lives in the MacBook notch. It must feel like a native macOS
 feature (Notification Center, Dynamic Island) — smooth, instant, finger-driven — never
@@ -15,6 +15,11 @@ like a third-party app.
 
 ## Architecture — keep these separated
 - `main.swift` — pure AppKit entry (no SwiftUI `App`): no default window or Settings scene.
+  Runs `DefaultsMigration` (settings from the old `com.jasontio.terminal-application`
+  domain) before anything reads UserDefaults.
+- Naming: `Notch*` types (`NotchPanel`, `NotchShape`, `NotchGeometry`, `NotchContentView`)
+  are named after the hardware notch, not the app — they are not leftovers of the old
+  "NotchTerm" name.
 - `AppDelegate` — owns everything; builds and wires all objects at launch; applies
   `AppSettings` live; picks the screen (`DisplayChoice`).
 - `NotchGeometry` — notch rect from `NSScreen` (`auxiliaryTopLeftArea`/`auxiliaryTopRightArea`,
@@ -55,18 +60,18 @@ like a third-party app.
   fixed frame and is clipped by the shape; never resize it per animation frame.
 - **Don't guess third-party APIs.** Before using SwiftTerm or OpenMultitouchSupport, read
   their source in
-  `~/Library/Developer/Xcode/DerivedData/terminal-application-*/SourcePackages/checkouts/`
+  `~/Library/Developer/Xcode/DerivedData/DEXMA-*/SourcePackages/checkouts/`
   and use the real signatures. For Apple APIs, check the SDK headers/`.swiftinterface`
   when unsure.
 - **Build after every change** and fix all errors AND warnings before saying you're done:
-  `xcodebuild -project terminal-application.xcodeproj -scheme terminal-application -configuration Debug -destination 'platform=macOS,arch=arm64' -skipPackagePluginValidation -skipMacroValidation build 2>&1 | grep -E 'warning:|error:|BUILD (SUCCEEDED|FAILED)'`
+  `xcodebuild -project DEXMA.xcodeproj -scheme DEXMA -configuration Debug -destination 'platform=macOS,arch=arm64' -skipPackagePluginValidation -skipMacroValidation build 2>&1 | grep -E 'warning:|error:|BUILD (SUCCEEDED|FAILED)'`
   (While the project's deployment target is above 14.0, also build once with
   `MACOSX_DEPLOYMENT_TARGET=14.0` appended to catch availability errors.)
 - **Don't edit `project.pbxproj`** unless absolutely necessary. Adding/removing Swift files
   needs no project edit (the target uses a synchronized folder). For entitlements,
   Info.plist keys, build settings or packages: tell the user, they change it in Xcode.
   (Exception on record: the user OK'd Claude's one pbxproj edit for packages/settings/name.)
-- Unit tests: `xcodebuild test … -only-testing:terminal-applicationTests` (Swift Testing).
+- Unit tests: `xcodebuild test … -only-testing:DEXMATests` (Swift Testing).
 - Small, focused files. Comment only the non-obvious parts (especially gesture math and
   window levels).
 - Work in phases and tick them below. (Phases 2–8 were run back to back at the user's
@@ -81,6 +86,7 @@ like a third-party app.
 - [x] 6. CGEventTap to swallow scroll during the gesture + Accessibility permission onboarding.
 - [x] 7. Polish: release velocity, peek state, Reduce Motion, launch at login (SMAppService), multi-display.
 - [x] 8. Finished app: status item menu, Settings window, onboarding, gesture fallback, shell respawn, non-notch pill, app icon, Release build.
+- [x] 9. Rename NotchTerm / terminal-application → DEXMA (branch `refactor/dexma`).
 
 The user asked (2026-10-01) to run phases 2–8 without stopping between them: per phase, read
 package sources, build to 0 errors/0 warnings, launch-check, `git commit -m "Phase N: …"`,
@@ -89,7 +95,7 @@ update Progress below.
 ## Progress
 - **Project setup (done by Claude with the user's OK):** SwiftTerm 1.20.0 + OpenMultitouchSupport
   3.0.3 (4.x needs macOS 15), App Sandbox off, `LSUIElement`, macOS 14.0, product renamed
-  `NotchTerm.app`. SwiftTerm needs the Metal Toolchain (installed via
+  (first `NotchTerm.app`, now `DEXMA.app`). SwiftTerm needs the Metal Toolchain (installed via
   `xcodebuild -downloadComponent MetalToolchain`) and a build-plugin trust (Xcode asks once;
   CLI builds pass `-skipPackagePluginValidation -skipMacroValidation`).
 - **Phase 1:** panel + ⌥` hotkey + display-link spring. Launch-checked (layer 26, frame centred
@@ -140,9 +146,9 @@ update Progress below.
   grant flow end-to-end.
 - **Testing gotchas:** launching the binary from a shell inherits the terminal's Accessibility
   grant (TCC "responsible process") — use `open`/LaunchServices to see the real state. The app
-  is unsandboxed, so its prefs are `~/Library/Preferences/com.jasontio.terminal-application.plist`;
+  is unsandboxed, so its prefs are `~/Library/Preferences/<bundle id>.plist`;
   plain `defaults` reads the stale sandbox container from the old template — pass the plist path.
-  zsh's `log` is a builtin: use `/usr/bin/log show --predicate 'subsystem == "com.jasontio.terminal-application"'`.
+  zsh's `log` is a builtin: use `/usr/bin/log show --predicate 'subsystem == "<bundle id>"'`.
   `cacheDisplay` can't render SwiftUI text, so `-snapshot` only covers the panel.
 - **Phase 7:** `AppSettings` (@Observable, UserDefaults, `onChange` → `AppDelegate.applySettings`
   re-applies everything live). Release velocity feeds the spring (Phase 5). **Peek**:
@@ -165,7 +171,7 @@ update Progress below.
   fallback: no multitouch → engine stays off, Settings says so, hotkey/hover/menu still work.
   Non-notch screens show a visible 150×26 pill (verified by snapshot with `-forcePill`). App
   icon generated by a CoreGraphics script (graphite squircle, black notch, green `>_`).
-  Release build: `build/NotchTerm.app` (Apple Development-signed, hardened runtime,
+  Release build: `build/DEXMA.app` (Apple Development-signed, hardened runtime,
   multitouch framework embedded), launch-checked via LaunchServices. Verified: selftest
   (settings change resizes panel live 760→880, hotkey re-registers, Settings + status item
   windows exist), 11 unit tests, 0 warnings Debug/Release/tests.
@@ -173,13 +179,18 @@ update Progress below.
   on 2026-10-01 — animation feel, closed-notch invisibility, gesture direction/thresholds,
   scroll swallowing, focus/typing/IME/Esc, Spaces/full screen, external displays, login item,
   Accessibility grant flow, Settings/Welcome visuals (SwiftUI can't be snapshotted here).
+- **Rename to DEXMA:** folders, xcodeproj, targets, scheme, product (`DEXMA.app`, module
+  `DEXMA`), UI copy, `TERM_PROGRAM=DEXMA`, log fallbacks. Bundle id unchanged (see Project
+  facts). Verified: 13 unit tests, selftest identical, `-snapshot` PNGs byte-identical to
+  the NotchTerm build. Note: `-snapshot` renders the terminal container hidden (never
+  un-hidden by `debugJump`), so it shows the shape only, not text.
 
 ## Debug snapshots
 Screen Recording isn't granted to the CLI, but an app can render its own window. Debug builds
 accept `-selftest` (open/close via the controller, printing key window, first responder and
 frontmost app at each step) and `-snapshot <dir>`: they type `ls /` into the shell, render the panel at progress
 0/0.15/0.5/1 to PNGs, and quit. Run the binary directly:
-`.../Debug/NotchTerm.app/Contents/MacOS/NotchTerm -snapshot /tmp/snap`, then view the PNGs.
+`.../Debug/DEXMA.app/Contents/MacOS/DEXMA -snapshot /tmp/snap`, then view the PNGs.
 
 ## Project facts
 - Xcode 26.2, Swift 6.2 compiler in Swift 5 language mode, `SWIFT_DEFAULT_ACTOR_ISOLATION =
@@ -187,13 +198,18 @@ frontmost app at each step) and `-snapshot <dir>`: they type `ls /` into the she
   `nonisolated`. C callbacks (Carbon, CGEventTap, multitouch) must be `nonisolated`
   functions; hop with `MainActor.assumeIsolated` only when the callback is known to arrive
   on the main thread.
-- Target/scheme `terminal-application`; sources in `terminal-application/`.
+- Project `DEXMA.xcodeproj`, target/scheme `DEXMA` (tests `DEXMATests`, `DEXMAUITests`);
+  sources in `DEXMA/`. Swift module `DEXMA` (`@testable import DEXMA`).
 - Settings (now in the project): deployment target macOS 14.0, `LSUIElement` = YES, App Sandbox
-  OFF, Hardened Runtime ON, product name NotchTerm, SPM packages SwiftTerm (upToNextMajor
-  1.20.0) + OpenMultitouchSupport (upToNextMinor 3.0.3). Bundle id stays
-  `com.jasontio.terminal-application`.
+  OFF, Hardened Runtime ON, product and display name DEXMA, SPM packages SwiftTerm
+  (upToNextMajor 1.20.0) + OpenMultitouchSupport (upToNextMinor 3.0.3). Bundle id is still
+  the legacy `com.jasontio.terminal-application` until the user changes it in Xcode
+  (recommended `com.jasontio.dexma`); `DefaultsMigration` carries settings across. A new
+  bundle id also means re-granting Accessibility and re-enabling Launch at Login.
+- The Debug `-selftest` deletes the `panelWidth` and `hotKey` defaults when it finishes (real
+  prefs domain): back up the user's prefs first if they have customised those.
 - Release build: `…build.sh`-style `xcodebuild -configuration Release`, then
-  `ditto <DerivedData>/Build/Products/Release/NotchTerm.app build/NotchTerm.app` (git-ignored).
+  `ditto <DerivedData>/Build/Products/Release/DEXMA.app build/DEXMA.app` (git-ignored).
 - Reference hardware: 14" MacBook Pro, built-in display 1512×982 pt @2x, 120 Hz; notch
   185×32 pt (left aux 665 pt, right aux 662 pt — not exactly centered). An external
   2560×1440 display (no notch) is usually the PRIMARY screen.
