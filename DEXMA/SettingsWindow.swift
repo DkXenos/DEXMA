@@ -68,8 +68,11 @@ struct SettingsView: View {
                 Slider(value: $settings.bounce, in: AppSettings.bounceRange) {
                     Text("Bounciness")
                 } minimumValueLabel: { Text("None") } maximumValueLabel: { Text("Lots") }
+                Slider(value: $settings.effectIntensity, in: AppSettings.effectIntensityRange) {
+                    Text("Effect intensity")
+                } minimumValueLabel: { Text("Off") } maximumValueLabel: { Text("Full") }
                 if NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
-                    Text("Reduce Motion is on in System Settings, so animations are short and don't bounce.")
+                    Text("Reduce Motion is on in System Settings, so animations are short, don't bounce, and skip the lens effect.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
             }

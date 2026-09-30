@@ -40,6 +40,7 @@ final class AppSettings {
     static let triggerDistanceRange = 0.15...0.60
     static let durationRange = 0.25...0.80
     static let bounceRange = 0.0...0.40
+    static let effectIntensityRange = 0.0...1.0
 
     @ObservationIgnored var onChange: (() -> Void)?
     @ObservationIgnored private let defaults = UserDefaults.standard
@@ -57,6 +58,8 @@ final class AppSettings {
     var invertTrackpadY: Bool { didSet { save(invertTrackpadY, "invertTrackpadY") } }
     var animationDuration: Double { didSet { save(animationDuration, "animationDuration") } }
     var bounce: Double { didSet { save(bounce, "bounce") } }
+    /// Liquid lens effect while opening/closing: 0 = off … 1 = full (`EffectTuning.full`).
+    var effectIntensity: Double { didSet { save(effectIntensity, "effectIntensity") } }
     var escClosesPanel: Bool { didSet { save(escClosesPanel, "escClosesPanel") } }
     var closesOnFocusLoss: Bool { didSet { save(closesOnFocusLoss, "closesOnFocusLoss") } }
     var hoverToPeek: Bool { didSet { save(hoverToPeek, "hoverToPeek") } }
@@ -81,6 +84,7 @@ final class AppSettings {
         invertTrackpadY = bool("invertTrackpadY", false)
         animationDuration = double("animationDuration", 0.45, Self.durationRange)
         bounce = double("bounce", 0.20, Self.bounceRange)
+        effectIntensity = double("effectIntensity", 1, Self.effectIntensityRange)
         escClosesPanel = bool("escClosesPanel", true)
         closesOnFocusLoss = bool("closesOnFocusLoss", true)
         hoverToPeek = bool("hoverToPeek", true)

@@ -9,10 +9,14 @@ final class ShellSession: NSObject, LocalProcessTerminalViewDelegate {
 
     let container: TerminalContainerView
     var terminalView: LocalProcessTerminalView { container.terminalView }
+    /// The shell printed something.
+    var onOutput: (() -> Void)?
     private var lastStart = Date.distantPast
+    private var cachedSnapshot: TerminalSnapshot?
+    private var snapshotScrollPosition: Double = 0
 
     init(size: CGSize) {
-        let terminal = LocalProcessTerminalView(frame: CGRect(origin: .zero, size: size))
+        let terminal = ShellTerminalView(frame: CGRect(origin: .zero, size: size))
         terminal.font = .monospacedSystemFont(ofSize: 12.5, weight: .regular)
         terminal.nativeBackgroundColor = .black
         terminal.nativeForegroundColor = NSColor(white: 0.9, alpha: 1)
@@ -21,7 +25,40 @@ final class ShellSession: NSObject, LocalProcessTerminalViewDelegate {
         container.isHidden = true
         super.init()
         terminal.processDelegate = self
+        terminal.onOutput = { [weak self] in self?.onOutput?() }
         start()
+    }
+
+    /// A picture of the terminal as it looks now, for the motion layer. Reuses the last one
+    /// unless something changed since: `invalidateSnapshot`, or the view scrolled.
+    func snapshot() -> TerminalSnapshot? {
+        if cachedSnapshot == nil || terminalView.scrollPosition != snapshotScrollPosition {
+            cachedSnapshot = TerminalSnapshot.capture(terminalView)
+            snapshotScrollPosition = terminalView.scrollPosition
+        }
+        return cachedSnapshot
+    }
+
+    func invalidateSnapshot() {
+        cachedSnapshot = nil
+    }
+
+    /// The terminal has scrolled since the cached snapshot was taken.
+    var snapshotScrolledAway: Bool {
+        cachedSnapshot != nil && terminalView.scrollPosition != snapshotScrollPosition
+    }
+
+    /// The cached snapshot has no caret but the live terminal (focused) shows one.
+    var snapshotMissesCaret: Bool {
+        cachedSnapshot.map { !$0.showsCaret && terminalView.hasFocus } ?? false
+    }
+
+    /// Restarts the caret's blink at full opacity, the way snapshots draw it, so the live
+    /// caret takes over from a snapshot without a jump. (Re-setting `caretViewTracksFocus`
+    /// is SwiftTerm's public way to restart it.)
+    func restartCaretBlink() {
+        guard terminalView.hasFocus else { return }
+        terminalView.caretViewTracksFocus = terminalView.caretViewTracksFocus
     }
 
     func resize(to size: CGSize) {
@@ -67,6 +104,16 @@ final class ShellSession: NSObject, LocalProcessTerminalViewDelegate {
     func sizeChanged(source: LocalProcessTerminalView, newCols: Int, newRows: Int) {}
     func setTerminalTitle(source: LocalProcessTerminalView, title: String) {}
     func hostCurrentDirectoryUpdate(source: TerminalView, directory: String?) {}
+}
+
+/// The terminal view, reporting whenever the shell prints (output arrives on the main queue).
+final class ShellTerminalView: LocalProcessTerminalView {
+    var onOutput: (() -> Void)?
+
+    override func dataReceived(slice: ArraySlice<UInt8>) {
+        super.dataReceived(slice: slice)
+        onOutput?()
+    }
 }
 
 /// Holds the terminal at a fixed size and clips it to the notch silhouette with a layer mask,

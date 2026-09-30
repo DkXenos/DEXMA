@@ -66,6 +66,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if !UserDefaults.standard.bool(forKey: "didShowOnboarding") {
             showOnboarding()
         }
+        // Compile the liquid effect's shaders now, so the first open doesn't hitch.
+        LiquidMotionLayer.precompile()
+        DispatchQueue.main.async { controller.warmUpEffects() }
         #if DEBUG
         DebugSnapshot.runIfRequested(panel: panel, controller: controller, session: session)
         #endif
@@ -130,6 +133,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         controller.closesOnFocusLoss = settings.closesOnFocusLoss
         controller.animationDuration = settings.animationDuration
         controller.bounce = settings.bounce
+        controller.effectIntensity = settings.effectIntensity
         if let geometry = makeGeometry() { controller.updateGeometry(geometry) }
 
         gestures.parameters = GestureParameters(edgeZone: settings.edgeZone,

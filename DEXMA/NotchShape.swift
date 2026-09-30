@@ -20,6 +20,13 @@ struct NotchShape: Shape {
         }
     }
 
+    /// Scaled about the top centre, for squash & stretch. 1 × 1 returns the shape unchanged.
+    func scaled(by scale: CGSize) -> NotchShape {
+        guard scale != CGSize(width: 1, height: 1) else { return self }
+        return NotchShape(width: width * scale.width, height: height * scale.height,
+                          bottomRadius: bottomRadius, earRadius: earRadius, centerX: centerX)
+    }
+
     func path(in rect: CGRect) -> Path {
         let w = max(0, width)
         let h = max(0, height)

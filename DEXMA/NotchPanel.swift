@@ -14,6 +14,9 @@ final class NotchPanel: NSPanel {
     var onResignKey: (() -> Void)?
     /// A click on the panel while it's not taking mouse input for the terminal (peek state).
     var onMouseDown: (() -> Bool)?
+    /// Typing, clicking, dragging or scrolling reached the panel: what the terminal shows
+    /// may have changed.
+    var onInput: ((NSEvent.EventType) -> Void)?
 
     init(frame: CGRect) {
         super.init(contentRect: frame, styleMask: [.borderless, .nonactivatingPanel],
@@ -58,6 +61,13 @@ final class NotchPanel: NSPanel {
             break
         }
         super.sendEvent(event)
+        switch event.type {
+        case .keyDown, .leftMouseDown, .leftMouseDragged, .leftMouseUp, .rightMouseDown,
+             .otherMouseDown, .scrollWheel:
+            onInput?(event.type)
+        default:
+            break
+        }
     }
 
     // Key equivalents reach the key window before any menu. A key panel of an inactive agent
