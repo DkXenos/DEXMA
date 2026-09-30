@@ -70,7 +70,7 @@ like a third-party app.
 - [x] 3. SwiftTerm persistent zsh inside the expanded panel.
 - [x] 4. Focus: key window when open, Esc closes, restore previous app's focus.
 - [x] 5. GestureEngine: two touches starting in the top ~10% of the trackpad moving down drive progress interactively.
-- [ ] 6. CGEventTap to swallow scroll during the gesture + Accessibility permission onboarding.
+- [x] 6. CGEventTap to swallow scroll during the gesture + Accessibility permission onboarding.
 - [ ] 7. Polish: release velocity, peek state, Reduce Motion, launch at login (SMAppService), multi-display.
 - [ ] 8. Finished app: status item menu, Settings window, onboarding, gesture fallback, shell respawn, non-notch pill, app icon, Release build.
 
@@ -118,6 +118,24 @@ update Progress below.
   (no permission needed). Unverified: **y orientation** (assumed y = 1 at the far/top edge,
   from MultitouchSupport's normalizedPosition; `GestureEngine.invertsY` flips it), feel of
   thresholds, real-finger accuracy.
+- **Phase 6:** `ScrollBlocker` — active `CGEventTap` (scroll wheel only) on its own thread
+  (a busy main thread must never delay system scrolling), reading a lock-protected
+  `ScrollGate`. Swallows continuous (trackpad) scroll while the recognizer is capturing
+  (armed in the edge zone, or tracking), plus momentum for 0.6 s after a completed swipe;
+  re-enables itself if macOS times the tap out. Without Accessibility it polls
+  `AXIsProcessTrusted` every 1.5 s and starts by itself when granted (no relaunch).
+  `Onboarding.swift`: first-run window (gesture + hotkey how-to, why Accessibility, button that
+  prompts and opens the Privacy_Accessibility pane, live "Granted" status). Only Done/close
+  marks it seen (`didShowOnboarding`), not quitting. Verified: tap created when trusted, waits
+  when not (log: `Launched. Multitouch gestures: on; scroll blocking: …`), onboarding shows on
+  first run. Unverified: that scroll is actually swallowed during a real swipe; permission
+  grant flow end-to-end.
+- **Testing gotchas:** launching the binary from a shell inherits the terminal's Accessibility
+  grant (TCC "responsible process") — use `open`/LaunchServices to see the real state. The app
+  is unsandboxed, so its prefs are `~/Library/Preferences/com.jasontio.terminal-application.plist`;
+  plain `defaults` reads the stale sandbox container from the old template — pass the plist path.
+  zsh's `log` is a builtin: use `/usr/bin/log show --predicate 'subsystem == "com.jasontio.terminal-application"'`.
+  `cacheDisplay` can't render SwiftUI text, so `-snapshot` only covers the panel.
 
 ## Debug snapshots
 Screen Recording isn't granted to the CLI, but an app can render its own window. Debug builds

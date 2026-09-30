@@ -1,12 +1,18 @@
 import AppKit
 import Carbon.HIToolbox
 import SwiftUI
+import os
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
+    private static let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "NotchTerm",
+                                       category: "App")
     private var controller: PanelController?
     private var session: ShellSession?
     private var hotKey: HotKey?
     private var gestures: GestureEngine?
+    private let scrollBlocker = ScrollBlocker()
+    private let accessibility = AccessibilityPermission()
+    private var onboarding: OnboardingWindowController?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         guard let screen = NotchGeometry.notchedScreen() else { return }
@@ -31,14 +37,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         self.session = session
 
         let gestures = GestureEngine(controller: controller, session: session)
+        gestures.scrollGate = scrollBlocker.gate
         let gesturesStarted = gestures.start()  // No trackpad: stays off; the hotkey still works.
-        #if DEBUG
-        print("[launch] multitouch gestures running: \(gesturesStarted)")
-        #endif
         self.gestures = gestures
+        // Without Accessibility this waits (polling) and starts by itself once it's granted.
+        scrollBlocker.startWhenPermitted()
+        Self.logger.notice(
+            "Launched. Multitouch gestures: \(gesturesStarted ? "on" : "unavailable", privacy: .public); scroll blocking: \(self.scrollBlocker.isActive ? "on" : "waiting for Accessibility", privacy: .public)")
+
+        if !UserDefaults.standard.bool(forKey: "didShowOnboarding") {
+            showOnboarding()
+        }
         #if DEBUG
         DebugSnapshot.runIfRequested(panel: panel, controller: controller, session: session)
         #endif
+    }
+
+    func showOnboarding() {
+        if onboarding == nil {
+            onboarding = OnboardingWindowController(permission: accessibility, shortcut: "⌥`") {
+                UserDefaults.standard.set(true, forKey: "didShowOnboarding")
+            }
+        }
+        onboarding?.show()
     }
 
     func applicationDidChangeScreenParameters(_ notification: Notification) {

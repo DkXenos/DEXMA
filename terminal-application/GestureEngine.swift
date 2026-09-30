@@ -13,8 +13,8 @@ final class GestureEngine {
     var parameters = GestureParameters()
     /// Escape hatch in case a trackpad reports y = 0 at the top edge.
     var invertsY = false
-    /// Mirrors `recognizer.isCapturing` for the scroll blocker (Phase 6).
-    var onCaptureChange: ((Bool) -> Void)?
+    /// Told when scroll events should be swallowed (the scroll blocker reads it).
+    var scrollGate: ScrollGate?
     /// Live touches, for the Settings trackpad preview.
     var onTouches: (([TouchPoint]) -> Void)?
 
@@ -74,12 +74,14 @@ final class GestureEngine {
         case .cancelled: controller.endInteraction(velocity: 0)
         case nil: break
         }
-        setCapturing(recognizer.isCapturing)
+        var swipeCompleted = false
+        if case .ended = event { swipeCompleted = true }
+        setCapturing(recognizer.isCapturing, swipeCompleted: swipeCompleted)
     }
 
-    private func setCapturing(_ capturing: Bool) {
+    private func setCapturing(_ capturing: Bool, swipeCompleted: Bool = false) {
         guard capturing != wasCapturing else { return }
         wasCapturing = capturing
-        onCaptureChange?(capturing)
+        scrollGate?.setCapturing(capturing, swipeCompleted: swipeCompleted)
     }
 }
