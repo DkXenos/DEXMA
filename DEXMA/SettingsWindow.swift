@@ -154,7 +154,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         self.onVisibilityChange = onVisibilityChange
         let window = NSWindow(contentRect: .zero, styleMask: [.titled, .closable],
                               backing: .buffered, defer: false)
-        window.title = "NotchTerm Settings"
+        window.title = "DEXMA Settings"
         window.isReleasedWhenClosed = false
         super.init(window: window)
         window.contentViewController = NSHostingController(rootView: rootView)

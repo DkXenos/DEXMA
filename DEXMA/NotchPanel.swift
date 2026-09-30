@@ -3,7 +3,7 @@ import Carbon.HIToolbox
 
 /// Borderless, transparent, non-activating panel that sits over the notch on every Space.
 ///
-/// Non-activating means it can become key (and take typing) without activating NotchTerm, so
+/// Non-activating means it can become key (and take typing) without activating DEXMA, so
 /// the app you were in stays frontmost and gets the keyboard back as soon as the panel closes.
 final class NotchPanel: NSPanel {
     /// Only true while open; a closed panel must never steal the keyboard.

@@ -13,7 +13,7 @@ struct OnboardingView: View {
                     .resizable()
                     .frame(width: 64, height: 64)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Welcome to NotchTerm").font(.title2.bold())
+                    Text("Welcome to DEXMA").font(.title2.bold())
                     Text("A terminal that lives in your notch.").foregroundStyle(.secondary)
                 }
             }
@@ -24,7 +24,7 @@ struct OnboardingView: View {
                 Label("…or press \(shortcut) from anywhere", systemImage: "keyboard")
                 Label("Swipe up, press Esc, or press \(shortcut) again to close",
                       systemImage: "arrow.up.to.line")
-                Label("NotchTerm lives in the menu bar — quit and settings are there",
+                Label("DEXMA lives in the menu bar — quit and settings are there",
                       systemImage: "menubar.rectangle")
             }
 
@@ -43,7 +43,7 @@ struct OnboardingView: View {
                     }
                     Text("""
                         Needed for one thing: stopping the window under your cursor from \
-                        scrolling while you swipe the terminal open. NotchTerm never reads or \
+                        scrolling while you swipe the terminal open. DEXMA never reads or \
                         records your keystrokes.
                         """)
                         .font(.callout)
@@ -51,7 +51,7 @@ struct OnboardingView: View {
                         .fixedSize(horizontal: false, vertical: true)
                     if !permission.isGranted {
                         Button("Open Accessibility Settings…") { permission.requestAccess() }
-                        Text("Turn on NotchTerm in the list. This updates as soon as you do — no restart needed.")
+                        Text("Turn on DEXMA in the list. This updates as soon as you do — no restart needed.")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
@@ -83,7 +83,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
         self.onFinish = onFinish
         let window = NSWindow(contentRect: .zero, styleMask: [.titled, .closable],
                               backing: .buffered, defer: false)
-        window.title = "Welcome to NotchTerm"
+        window.title = "Welcome to DEXMA"
         window.isReleasedWhenClosed = false
         super.init(window: window)
         window.contentViewController = NSHostingController(rootView: OnboardingView(

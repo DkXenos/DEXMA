@@ -9,7 +9,7 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         self.app = app
         super.init()
         statusItem.button?.image = Self.makeIcon()
-        statusItem.button?.setAccessibilityLabel("NotchTerm")
+        statusItem.button?.setAccessibilityLabel("DEXMA")
         let menu = NSMenu()
         menu.delegate = self
         statusItem.menu = menu
@@ -29,7 +29,7 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         login.state = LoginItem.isEnabled ? .on : .off
         menu.addItem(login)
         menu.addItem(.separator())
-        menu.addItem(item("Quit NotchTerm", #selector(quit), key: "q"))
+        menu.addItem(item("Quit DEXMA", #selector(quit), key: "q"))
     }
 
     private func item(_ title: String, _ action: Selector, key: String = "") -> NSMenuItem {
@@ -68,23 +68,23 @@ final class StatusItemController: NSObject, NSMenuDelegate {
     }
 }
 
-/// A small main menu: it's only reachable while one of NotchTerm's windows (Settings,
+/// A small main menu: it's only reachable while one of DEXMA's windows (Settings,
 /// Welcome) is active, and gives those windows the standard editing shortcuts.
 enum MainMenu {
     static func make(target: AppDelegate) -> NSMenu {
         let main = NSMenu()
 
         let appMenu = NSMenu()
-        appMenu.addItem(withTitle: "About NotchTerm",
+        appMenu.addItem(withTitle: "About DEXMA",
                         action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)), keyEquivalent: "")
         appMenu.addItem(.separator())
         let settings = appMenu.addItem(withTitle: "Settings…", action: #selector(AppDelegate.showSettings(_:)),
                                        keyEquivalent: ",")
         settings.target = target
         appMenu.addItem(.separator())
-        appMenu.addItem(withTitle: "Quit NotchTerm", action: #selector(NSApplication.terminate(_:)),
+        appMenu.addItem(withTitle: "Quit DEXMA", action: #selector(NSApplication.terminate(_:)),
                         keyEquivalent: "q")
-        add(appMenu, titled: "NotchTerm", to: main)
+        add(appMenu, titled: "DEXMA", to: main)
 
         let edit = NSMenu(title: "Edit")
         edit.addItem(withTitle: "Undo", action: Selector(("undo:")), keyEquivalent: "z")

@@ -3,7 +3,7 @@ import ServiceManagement
 
 /// Launch at login via `SMAppService.mainApp` (macOS 13+; no helper app needed).
 enum LoginItem {
-    private static let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "NotchTerm",
+    private static let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "DEXMA",
                                        category: "LoginItem")
 
     static var isEnabled: Bool {
@@ -20,7 +20,7 @@ enum LoginItem {
         } catch {
             logger.error("Login item \(enabled ? "register" : "unregister") failed: \(error.localizedDescription, privacy: .public)")
         }
-        // The user switched NotchTerm off in System Settings before: only they can re-allow it.
+        // The user switched DEXMA off in System Settings before: only they can re-allow it.
         if SMAppService.mainApp.status == .requiresApproval {
             SMAppService.openSystemSettingsLoginItems()
         }

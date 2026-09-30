@@ -3,7 +3,7 @@ import SwiftUI
 import os
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
-    private static let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "NotchTerm",
+    private static let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "DEXMA",
                                        category: "App")
     let settings = AppSettings()
     private var controller: PanelController?

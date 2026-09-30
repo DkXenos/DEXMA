@@ -1,13 +1,13 @@
 //
-//  terminal_applicationUITests.swift
-//  terminal-applicationUITests
+//  DEXMAUITests.swift
+//  DEXMAUITests
 //
 //  Created by Jason TIo on 01/10/26.
 //
 
 import XCTest
 
-final class terminal_applicationUITests: XCTestCase {
+final class DEXMAUITests: XCTestCase {
 
     override func setUpWithError() throws {
         // Put setup code here. This method is called before the invocation of each test method in the class.

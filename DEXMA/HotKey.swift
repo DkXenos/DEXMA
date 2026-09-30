@@ -6,7 +6,7 @@ import os
 final class HotKey {
     private static let signature: OSType = 0x4E54_524D  // 'NTRM'
     private static var nextID: UInt32 = 1
-    private static let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "NotchTerm",
+    private static let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "DEXMA",
                                        category: "HotKey")
 
     private let id: UInt32
