@@ -41,7 +41,14 @@ like a third-party app.
 - `HoverMonitor` — pointer over the notch → peek. `AppSettings`/`KeyCombo` — UserDefaults.
 - UI: `StatusItemController` (menu bar item; also `MainMenu`), `SettingsWindow`
   (`SettingsView`, `TrackpadPreview`, `ShortcutRecorder`), `Onboarding`, `LoginItem`.
-- `DebugSnapshot` — DEBUG-only `-selftest` / `-snapshot <dir>` / `-forcePill` hooks.
+- Liquid effect (only while moving): `EffectTuning` (every constant + `scaled(by:)` for the
+  Settings "Effect intensity" slider), `MotionEffects` (@Observable per-frame state: jelly
+  stretch/wobble, energy, anticipation bulge; stepped by `SpringDriver.onFrame`),
+  `LiquidMotionLayer` + `LiquidEffects.metal` (SwiftUI `distortionEffect` stretch and
+  `layerEffect` lens/aberration/light over the terminal snapshot), `TerminalSnapshot`
+  (pixel-exact picture of the live terminal), `Haptics` (`NSHapticFeedbackManager` ticks).
+- `DebugSnapshot` — DEBUG-only `-selftest` / `-snapshot <dir>` / `-forcePill` hooks;
+  `EffectTest` — DEBUG-only `-effecttest <dir>` (see *Debug snapshots*).
 
 ## Animation model
 - `progress` is always the on-screen (presentation) value. `SpringDriver` steps it each
@@ -51,6 +58,17 @@ like a third-party app.
 - Views derive every size/radius from `progress`; no implicit or explicit SwiftUI
   animations on anything derived from it.
 - The display link is created once at launch and paused while the spring is at rest.
+- Liquid effect: `SpringDriver.onFrame` steps `MotionEffects` on the same display link and
+  keeps it running until every effect value is *exactly* zero (then the link pauses). The
+  black silhouette is always the same vector `shape.fill` — squash/stretch/bulge only scale
+  `NotchShape`'s width/height about the top centre (`Frame.scale`, exactly 1 × 1 at rest).
+  Shaders touch only the content: while moving, `LiquidMotionLayer` shows a `TerminalSnapshot`
+  (the live terminal's mask opacity goes to 0 — never `isHidden`, which would drop first
+  responder), bent by the shaders and clipped to the silhouette. At rest the motion layer is
+  transparent with `isEnabled: false`. The only thing ever swapped is the text, in one
+  SwiftUI update. Snapshots are taken while idle (0.5 s after the last output/input/scroll),
+  so `open`/`close` normally do no capture. Reduce Motion or intensity Off → the effect is
+  skipped entirely and the old path runs unchanged.
 
 ## Rules
 - **Performance first.** No view recreation on open/close. No main-thread work during
@@ -87,6 +105,8 @@ like a third-party app.
 - [x] 7. Polish: release velocity, peek state, Reduce Motion, launch at login (SMAppService), multi-display.
 - [x] 8. Finished app: status item menu, Settings window, onboarding, gesture fallback, shell respawn, non-notch pill, app icon, Release build.
 - [x] 9. Rename NotchTerm / terminal-application → DEXMA (branch `refactor/dexma`).
+- [x] 10. Liquid lens effect while opening/closing + haptics (branch `feature/distortion`,
+  not merged: the user tests the feel first).
 
 The user asked (2026-10-01) to run phases 2–8 without stopping between them: per phase, read
 package sources, build to 0 errors/0 warnings, launch-check, `git commit -m "Phase N: …"`,
@@ -184,6 +204,24 @@ update Progress below.
   facts). Verified: 13 unit tests, selftest identical, `-snapshot` PNGs byte-identical to
   the NotchTerm build. Note: `-snapshot` renders the terminal container hidden (never
   un-hidden by `debugJump`), so it shows the shape only, not text.
+- **Phase 10 (liquid effect):** see *Animation model*. Findings that shaped it: SwiftTerm
+  draws with CoreGraphics (its Metal renderer is opt-in, off), so `cacheDisplay` works — but
+  it misses the caret (a `CALayerDelegate`-drawn subview) and the overlay scroller knob (a
+  sublayer with a background colour and a NaN corner radius); `TerminalSnapshot` adds both.
+  Pushing the black silhouette through a SwiftUI shader re-rasterises its curved edges
+  (single edge pixels off by up to 65/255), so the silhouette stays out of the shaders.
+  SwiftUI skips a layer effect whose content is fully transparent, hence the 0.004-alpha
+  black base in the motion layer. Measured with `-effecttest` (Debug, built-in display at
+  120 Hz): snapshot vs window server 0 px differ (>2/255); motion layer vs live at rest 0 px
+  (open and closed); real swap-back converges to the live frame with no in-between frame;
+  0 late frames over 6 open/close cycles with the effect on (same as off), main-thread p95
+  ≈ 2.5 ms per frame; snapshot capture ≈ 1 ms (optimised) / 3 ms (Debug); `close()` 2–5 ms
+  as before; interruptions (mid-flight reversals, grabbing mid-close, flicks, snap-backs)
+  all end consistent; `-snapshot` PNGs and `-selftest` identical to main. 18 unit tests.
+  ScreenCaptureKit background bending: not built — Screen Recording isn't grantable to the
+  CLI, so stream latency/pacing couldn't be measured (the user's rule: unmeasured → don't ship).
+  Unverified (needs the user on hardware): the feel, haptics (NSHapticFeedbackManager from a
+  non-activating agent panel), Reduce Motion (same code path as intensity Off), macOS 14.
 
 ## Debug snapshots
 Screen Recording isn't granted to the CLI, but an app can render its own window. Debug builds
@@ -191,6 +229,13 @@ accept `-selftest` (open/close via the controller, printing key window, first re
 frontmost app at each step) and `-snapshot <dir>`: they type `ls /` into the shell, render the panel at progress
 0/0.15/0.5/1 to PNGs, and quit. Run the binary directly:
 `.../Debug/DEXMA.app/Contents/MacOS/DEXMA -snapshot /tmp/snap`, then view the PNGs.
+`-effecttest <dir>` checks the liquid effect against the window server's own composite of the
+panel (`CGWindowListCreateImage` via `dlsym`: deprecated, but an app may capture its own
+window without Screen Recording): snapshot fidelity, motion layer vs live at rest, a real
+swap-back frame by frame, frame pacing with the effect on/off, gesture/interruption end
+states, and posed PNGs (composite them over a grey background to see the rim light). Always
+check the build succeeded first — a failed build leaves the old binary, which ignores the flag
+and never quits (wrap runs in a watchdog).
 
 ## Project facts
 - Xcode 26.2, Swift 6.2 compiler in Swift 5 language mode, `SWIFT_DEFAULT_ACTOR_ISOLATION =
@@ -230,3 +275,8 @@ frontmost app at each step) and `-snapshot <dir>`: they type `ls /` into the she
   there caused SwiftUI "AttributeGraph: cycle detected" warnings at runtime.
 - While a non-activating panel is key, `NSApp.isActive` is true; `NSApp.deactivate()` is what
   hands the keyboard back.
+- Hiding (`isHidden`) the view that is first responder moves first responder away; fade it
+  via layer opacity instead.
+- `NSGraphicsContext(bitmapImageRep:)` of a 2x rep is already in points — don't scale again.
+- SwiftUI shaders: `layerEffect`/`distortionEffect` exist on macOS 14; `Shader.compile(as:)`
+  is macOS 15+ (on 14, render the effect once at launch to warm it).
