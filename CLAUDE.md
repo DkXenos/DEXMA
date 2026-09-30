@@ -68,7 +68,7 @@ like a third-party app.
 - [x] 1. Notch panel + global hotkey (Carbon, default ⌥`) toggling open/close with a spring. Plain black rounded rect.
 - [x] 2. NotchShape morphing from exact notch geometry to the expanded size.
 - [x] 3. SwiftTerm persistent zsh inside the expanded panel.
-- [ ] 4. Focus: key window when open, Esc closes, restore previous app's focus.
+- [x] 4. Focus: key window when open, Esc closes, restore previous app's focus.
 - [ ] 5. GestureEngine: two touches starting in the top ~10% of the trackpad moving down drive progress interactively.
 - [ ] 6. CGEventTap to swallow scroll during the gesture + Accessibility permission onboarding.
 - [ ] 7. Polish: release velocity, peek state, Reduce Motion, launch at login (SMAppService), multi-display.
@@ -96,11 +96,21 @@ update Progress below.
   and clips it with a `CAShapeLayer` mask built from the same `NotchShape` each frame; text fades
   in over progress 0.35→0.85; the container is hidden while fully closed. Verified: zsh child
   process at launch, respawn after `kill -9`, no orphan shell after quit, and rendered
-  snapshots (see *Debug snapshots*). Unverified: typing (needs Phase 4 focus).
+  snapshots (see *Debug snapshots*).
+- **Phase 4:** the panel is non-activating and only `canBecomeKey` while open. `open()` records
+  the frontmost app, makes the panel key and the terminal first responder — the other app
+  stays frontmost (menu bar unchanged). `close()` calls `NSApp.deactivate()` first: verified
+  that this drops key status immediately (re-`activate()`-ing the frontmost app alone did
+  nothing until the animation ended). Esc closes unless a full-screen program (alternate screen:
+  vim/less/htop) is running; ⌘C/⌘V/⌘A routed in `NotchPanel.performKeyEquivalent`; ⌘W closes;
+  ⌘Q swallowed while the panel is key (would kill the shell); clicking another app closes the
+  panel (resignKey). Verified with `-selftest` (key/first-responder/frontmost at each step).
+  Unverified: real typing, IME, Esc and shortcuts on hardware.
 
 ## Debug snapshots
 Screen Recording isn't granted to the CLI, but an app can render its own window. Debug builds
-accept `-snapshot <dir>`: they type `ls /` into the shell, render the panel at progress
+accept `-selftest` (open/close via the controller, printing key window, first responder and
+frontmost app at each step) and `-snapshot <dir>`: they type `ls /` into the shell, render the panel at progress
 0/0.15/0.5/1 to PNGs, and quit. Run the binary directly:
 `.../Debug/NotchTerm.app/Contents/MacOS/NotchTerm -snapshot /tmp/snap`, then view the PNGs.
 
@@ -128,4 +138,9 @@ accept `-snapshot <dir>`: they type `ls /` into the shell, render the panel at p
   explicitly.
 - `NSHostingView.sizingOptions = []`, or SwiftUI's changing ideal size resizes the panel.
 - An agent app with no main menu has no Edit menu, so ⌘C/⌘V don't reach a first
-  responder by default — check SwiftTerm's handling in Phase 4.
+  responder by default — SwiftTerm has `@objc copy:/paste:` but no `performKeyEquivalent`.
+- SwiftTerm's `keyDown` is `public`, not `open`: intercept keys in the window's `sendEvent`.
+- In `NSViewRepresentable.updateNSView`, touch only layers. Setting `isHidden`/`alphaValue`
+  there caused SwiftUI "AttributeGraph: cycle detected" warnings at runtime.
+- While a non-activating panel is key, `NSApp.isActive` is true; `NSApp.deactivate()` is what
+  hands the keyboard back.

@@ -17,6 +17,8 @@ final class ShellSession: NSObject, LocalProcessTerminalViewDelegate {
         terminal.nativeBackgroundColor = .black
         terminal.nativeForegroundColor = NSColor(white: 0.9, alpha: 1)
         container = TerminalContainerView(terminalView: terminal)
+        // Hidden while fully closed so it doesn't draw; the shell keeps running regardless.
+        container.isHidden = true
         super.init()
         terminal.processDelegate = self
         start()
@@ -89,6 +91,8 @@ final class TerminalContainerView: NSView {
 
     /// Clips to `shape`, which is laid out in panel coordinates (top-left origin); this view's
     /// top-left corner sits at `origin` in those coordinates.
+    /// Called from SwiftUI's update pass, so it only touches layers: changing NSView
+    /// properties (isHidden, alphaValue) here makes SwiftUI re-enter layout.
     func update(mask shape: NotchShape, panelSize: CGSize, origin: CGPoint, opacity: CGFloat) {
         CATransaction.begin()
         CATransaction.setDisableActions(true)
@@ -98,9 +102,8 @@ final class TerminalContainerView: NSView {
                                           tx: -origin.x, ty: bounds.height + origin.y)
         let path = shape.path(in: CGRect(origin: .zero, size: panelSize)).cgPath
         maskLayer.path = path.copy(using: &transform)
+        // The mask's opacity scales the content's alpha: that's the fade.
+        maskLayer.opacity = Float(opacity)
         CATransaction.commit()
-        alphaValue = opacity
-        // Fully closed: don't draw at all (the shell keeps running and buffering output).
-        isHidden = opacity <= 0
     }
 }

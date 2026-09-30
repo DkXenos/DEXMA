@@ -13,11 +13,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Pre-warm: zsh starts now and outlives every open/close.
         let session = ShellSession(size: geometry.terminalFrame.size)
         let panel = NotchPanel(frame: geometry.panelFrame)
-        let controller = PanelController(panel: panel, geometry: geometry)
+        let controller = PanelController(panel: panel, session: session, geometry: geometry)
 
         let hostingView = NSHostingView(
             rootView: NotchContentView(controller: controller, session: session))
         hostingView.sizingOptions = []  // Fixed-size panel: SwiftUI must never resize it.
+        // The panel overlaps the notch and menu bar on purpose; don't let AppKit safe-area
+        // insets feed back into SwiftUI layout.
+        hostingView.safeAreaRegions = []
         panel.contentView = hostingView
         // Pre-warm: the panel stays on screen from launch. Closed, it hides under the notch.
         panel.orderFrontRegardless()

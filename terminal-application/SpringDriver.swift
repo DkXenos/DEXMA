@@ -16,6 +16,10 @@ final class SpringDriver: NSObject {
 
     /// Called with the new value on every frame while the spring is moving.
     var onChange: ((CGFloat) -> Void)?
+    /// Called once when the spring settles on its target.
+    var onRest: ((CGFloat) -> Void)?
+
+    var isAnimating: Bool { displayLink.map { !$0.isPaused } ?? false }
 
     /// The link follows `window` across displays. Created once, paused while at rest.
     init(window: NSWindow) {
@@ -36,6 +40,14 @@ final class SpringDriver: NSObject {
         displayLink?.isPaused = false
     }
 
+    /// Jump straight to `value` (e.g. following a finger), stopping any animation.
+    func set(_ value: CGFloat) {
+        displayLink?.isPaused = true
+        self.value = value
+        velocity = 0
+        onChange?(value)
+    }
+
     @objc private func step(_ link: CADisplayLink) {
         // Advance to when this frame will be shown. After a resume there's no previous
         // frame, so use one frame's duration; clamp so a hitch doesn't make the spring jump.
@@ -49,6 +61,9 @@ final class SpringDriver: NSObject {
             value = target
             velocity = 0
             link.isPaused = true
+            onChange?(value)
+            onRest?(value)
+            return
         }
         onChange?(value)
     }
