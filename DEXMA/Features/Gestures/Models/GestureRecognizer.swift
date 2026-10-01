@@ -1,29 +1,6 @@
 import CoreGraphics
 import Foundation
 
-/// One finger on the trackpad, normalized to 0…1, with y = 1 at the top (far) edge.
-nonisolated struct TouchPoint: Equatable {
-    var id: Int32
-    var x: CGFloat
-    var y: CGFloat
-}
-
-nonisolated struct GestureParameters: Equatable {
-    /// Fingers must land within this top fraction of the trackpad to start opening.
-    var edgeZone: CGFloat = 0.12
-    /// Vertical travel (fraction of trackpad height) that equals a full open or close.
-    var triggerDistance: CGFloat = 0.3
-}
-
-nonisolated enum GestureEvent: Equatable {
-    case began
-    /// Progress change since `began`: + is toward open (fingers moving down).
-    case changed(delta: CGFloat)
-    /// Fingers lifted. `velocity` is in progress units per second.
-    case ended(delta: CGFloat, velocity: CGFloat)
-    case cancelled
-}
-
 /// Pure two-finger swipe recognizer, fed one multitouch frame at a time. No framework types,
 /// so it's unit-tested with synthetic frames.
 ///

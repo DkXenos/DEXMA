@@ -1,12 +1,5 @@
 import AppKit
-import Observation
 import SwiftUI
-
-/// Latest trackpad contacts, fed only while the Settings window is open.
-@Observable
-final class TouchPreview {
-    var touches: [TouchPoint] = []
-}
 
 struct SettingsView: View {
     @Bindable var settings: AppSettings
@@ -138,75 +131,5 @@ struct SettingsView: View {
         }
         .formStyle(.grouped)
         .frame(width: 540, height: 760)
-    }
-}
-
-/// Live view of the fingers on the trackpad, with the start zone shaded — for checking the
-/// direction and tuning the zone.
-struct TrackpadPreview: View {
-    let preview: TouchPreview
-    let edgeZone: Double
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Canvas { context, size in
-                let pad = CGRect(origin: .zero, size: size)
-                context.fill(Path(roundedRect: pad, cornerRadius: 10), with: .color(.secondary.opacity(0.15)))
-                let zone = CGRect(x: 0, y: 0, width: size.width, height: size.height * edgeZone)
-                context.fill(Path(zone), with: .color(.accentColor.opacity(0.25)))
-                for touch in preview.touches {
-                    // Trackpad y is 1 at the far (top) edge; the canvas grows downward.
-                    let center = CGPoint(x: touch.x * size.width, y: (1 - touch.y) * size.height)
-                    context.fill(Path(ellipseIn: CGRect(x: center.x - 9, y: center.y - 9, width: 18, height: 18)),
-                                 with: .color(.accentColor))
-                }
-            }
-            .clipShape(RoundedRectangle(cornerRadius: 10))
-            .frame(height: 130)
-            Text("Put two fingers in the shaded zone at the top, then swipe down.")
-                .font(.caption).foregroundStyle(.secondary)
-        }
-    }
-}
-
-final class SettingsWindowController: NSWindowController, NSWindowDelegate {
-    private let permission: AccessibilityPermission
-    private let screenRecording: ScreenRecordingPermission
-    private let onVisibilityChange: (Bool) -> Void
-
-    init(rootView: SettingsView, permission: AccessibilityPermission,
-         screenRecording: ScreenRecordingPermission,
-         onVisibilityChange: @escaping (Bool) -> Void) {
-        self.permission = permission
-        self.screenRecording = screenRecording
-        self.onVisibilityChange = onVisibilityChange
-        let window = NSWindow(contentRect: .zero, styleMask: [.titled, .closable],
-                              backing: .buffered, defer: false)
-        window.title = "DEXMA Settings"
-        window.isReleasedWhenClosed = false
-        super.init(window: window)
-        window.contentViewController = NSHostingController(rootView: rootView)
-        window.delegate = self
-    }
-
-    @available(*, unavailable)
-    required init?(coder: NSCoder) {
-        fatalError("init(coder:) is not supported")
-    }
-
-    func show() {
-        permission.startMonitoring()
-        screenRecording.startMonitoring()
-        onVisibilityChange(true)
-        NSApp.activate()  // An agent app must activate for its window to come to the front.
-        if window?.isVisible == false { window?.center() }
-        showWindow(nil)
-        window?.makeKeyAndOrderFront(nil)
-    }
-
-    func windowWillClose(_ notification: Notification) {
-        permission.stopMonitoring()
-        screenRecording.stopMonitoring()
-        onVisibilityChange(false)
     }
 }

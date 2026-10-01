@@ -2,13 +2,6 @@ import AppKit
 import Observation
 import SwiftUI
 
-enum PanelState {
-    case closed
-    /// Pointer hovering the notch: swollen slightly, a click opens.
-    case peek
-    case open
-}
-
 /// Single source of truth for the panel: `progress` (0 = notch, 1 = expanded) and state.
 /// The hotkey, the gesture and the pointer all drive it; views only read it.
 @Observable

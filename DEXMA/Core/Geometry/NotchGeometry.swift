@@ -111,7 +111,3 @@ struct NotchGeometry: Equatable {
         NSScreen.screens.first { $0.safeAreaInsets.top > 0 } ?? NSScreen.screens.first
     }
 }
-
-func lerp(_ a: CGFloat, _ b: CGFloat, _ t: CGFloat) -> CGFloat {
-    a + (b - a) * t
-}
