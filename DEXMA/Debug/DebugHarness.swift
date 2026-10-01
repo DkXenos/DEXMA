@@ -3,7 +3,7 @@ import AppKit
 
 /// Debug-only launch arguments that check the running app, print what they find and quit:
 /// `-selftest`, `-snapshot <dir>`, `-effecttest <dir>`, `-tabtest <dir>`, `-swipetest <dir>`,
-/// `-hovertest <dir>`,
+/// `-hovertest <dir>`, `-capturetest <dir>`,
 /// `-warptest <dir>`, `-captureidle <s>`.
 enum DebugHarness {
     static func runIfRequested(coordinator: AppCoordinator, panel: NotchPanel, notch: NotchViewModel,
@@ -23,6 +23,8 @@ enum DebugHarness {
         } else if let dir = value(after: "-sizetest") {
             SizeTest.run(coordinator: coordinator, panel: panel, notch: notch, session: session,
                          dir: URL(fileURLWithPath: dir))
+        } else if let dir = value(after: "-capturetest") {
+            CaptureTest.run(panel: panel, notch: notch, dir: URL(fileURLWithPath: dir))
         } else if let dir = value(after: "-claudeprobe") {
             ClaudeProbe.run(panel: panel, notch: notch, dir: URL(fileURLWithPath: dir))
         } else if let dir = value(after: "-swipetest") {

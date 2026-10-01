@@ -27,10 +27,10 @@ nonisolated struct CaptureLook: Equatable {
     var edgeGlowPeriod: Double = 7
 
     var fadeIn: Double = 0.18
-    var morph: Double = 0.32
+    var morph: Double = 0.3
     /// The lifted selection stays still this long before it flies.
-    var hold: Double = 0.12
-    var flight: Double = 0.44
+    var hold: Double = 0.06
+    var flight: Double = 0.42
     var fadeOut: Double = 0.2
     /// Reduce Motion: everything just fades, this fast.
     var reducedFade: Double = 0.15

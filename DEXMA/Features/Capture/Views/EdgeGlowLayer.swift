@@ -1,26 +1,39 @@
 import QuartzCore
 
 /// Capture mode's sign: a soft band of colour along the display's edges, slowly turning, like
-/// Apple Intelligence's edge glow. A conic gradient (half resolution: it's soft anyway) masked by
-/// a pre-rendered falloff from the edges; turning and breathing are Core Animation's, so it costs
-/// the main thread nothing while it runs.
+/// Apple Intelligence's edge glow. A conic gradient masked by a falloff from the edges; turning
+/// and breathing are Core Animation's, so it costs the main thread nothing while it runs. Both
+/// are bitmaps rendered once (small: they're soft), so turning them is only compositing.
+///
+/// Masked content that moves is re-rendered offscreen every frame, so the glow is four strips
+/// along the edges (each its own copy of the gradient, all turning about the display's centre),
+/// not one display-sized layer: the window server only redraws the edges.
 final class EdgeGlowLayer: CALayer {
-    private let colors = CAGradientLayer()
-    private let falloff = CALayer()
+    private static let colors = [(0.30, 0.62, 1.0), (0.62, 0.42, 1.0), (1.0, 0.40, 0.70), (1.0, 0.62, 0.32),
+                                 (0.40, 0.85, 0.95), (0.30, 0.62, 1.0)]
+        .map { CGColor(red: $0.0, green: $0.1, blue: $0.2, alpha: 1) }
+    /// Rendered once, shared by the four strips.
+    private static let wheel = conicImage(side: 256)
+
+    private var strips: [(strip: CALayer, colors: CALayer, mask: CALayer)] = []
+    private var falloff: CGImage?
     private var maskSize = CGSize.zero
     private var maskWidth: CGFloat = 0
 
     override init() {
         super.init()
-        colors.type = .conic
-        colors.startPoint = CGPoint(x: 0.5, y: 0.5)
-        colors.endPoint = CGPoint(x: 0.5, y: 0)
-        colors.colors = [(0.30, 0.62, 1.0), (0.62, 0.42, 1.0), (1.0, 0.40, 0.70), (1.0, 0.62, 0.32),
-                         (0.40, 0.85, 0.95), (0.30, 0.62, 1.0)]
-            .map { CGColor(red: $0.0, green: $0.1, blue: $0.2, alpha: 1) }
-        colors.contentsScale = 0.5
-        addSublayer(colors)
-        mask = falloff
+        for _ in 0..<4 {
+            let strip = CALayer()
+            let colors = CALayer()
+            colors.contents = Self.wheel
+            colors.contentsGravity = .resize
+            let mask = CALayer()
+            mask.contentsGravity = .resize
+            strip.addSublayer(colors)
+            strip.mask = mask
+            addSublayer(strip)
+            strips.append((strip, colors, mask))
+        }
     }
 
     override init(layer: Any) {
@@ -39,23 +52,36 @@ final class EdgeGlowLayer: CALayer {
         CATransaction.setDisableActions(true)
         frame = CGRect(origin: .zero, size: size)
         isHidden = look.edgeGlow <= 0
-        // A square the display's diagonal across, so turning never shows its corners.
-        let side = hypot(size.width, size.height)
-        colors.frame = CGRect(x: (size.width - side) / 2, y: (size.height - side) / 2, width: side, height: side)
-        falloff.frame = bounds
         if maskSize != size || maskWidth != look.edgeGlowWidth {
             maskSize = size
             maskWidth = look.edgeGlowWidth
-            falloff.contents = Self.falloffImage(size: size, width: look.edgeGlowWidth)
+            falloff = Self.falloffImage(size: size, width: look.edgeGlowWidth)
+        }
+        // How far in the falloff still shows (the blur reaches about twice its radius).
+        let band = min((look.edgeGlowWidth * 2.2).rounded(.up), size.height / 2, size.width / 2)
+        let rects = [CGRect(x: 0, y: 0, width: size.width, height: band),
+                     CGRect(x: 0, y: size.height - band, width: size.width, height: band),
+                     CGRect(x: 0, y: band, width: band, height: size.height - 2 * band),
+                     CGRect(x: size.width - band, y: band, width: band, height: size.height - 2 * band)]
+        // A square the display's diagonal across, centred on the display, so turning never shows
+        // its corners.
+        let side = hypot(size.width, size.height)
+        for ((strip, colors, mask), rect) in zip(strips, rects) {
+            strip.frame = rect
+            colors.frame = CGRect(x: (size.width - side) / 2 - rect.minX, y: (size.height - side) / 2 - rect.minY,
+                                  width: side, height: side)
+            mask.frame = strip.bounds
+            mask.contents = falloff
+            mask.contentsRect = CGRect(x: rect.minX / size.width, y: rect.minY / size.height,
+                                       width: rect.width / size.width, height: rect.height / size.height)
         }
         CATransaction.commit()
-        colors.removeAllAnimations()
+        for (_, colors, _) in strips { colors.removeAllAnimations() }
         guard animated, !isHidden else { return }
         let turn = CABasicAnimation(keyPath: "transform.rotation.z")
         turn.byValue = 2 * Double.pi
         turn.duration = look.edgeGlowPeriod
         turn.repeatCount = .infinity
-        colors.add(turn, forKey: "turn")
         let breathe = CABasicAnimation(keyPath: "opacity")
         breathe.fromValue = 0.7
         breathe.toValue = 1
@@ -63,7 +89,26 @@ final class EdgeGlowLayer: CALayer {
         breathe.autoreverses = true
         breathe.repeatCount = .infinity
         breathe.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-        colors.add(breathe, forKey: "breathe")
+        // The same begin time: the four copies turn as one.
+        let begin = convertTime(CACurrentMediaTime(), from: nil)
+        turn.beginTime = begin
+        breathe.beginTime = begin
+        for (_, colors, _) in strips {
+            colors.add(turn, forKey: "turn")
+            colors.add(breathe, forKey: "breathe")
+        }
+    }
+
+    /// The colour wheel: the gradient's colours around its centre (it's scaled up a lot; the
+    /// colours are soft, so it doesn't show).
+    private static func conicImage(side: Int) -> CGImage? {
+        guard let context = CGContext(data: nil, width: side, height: side, bitsPerComponent: 8, bytesPerRow: 0,
+                                      space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                                      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue),
+              let gradient = CGGradient(colorsSpace: CGColorSpace(name: CGColorSpace.sRGB), colors: colors as CFArray,
+                                        locations: nil) else { return nil }
+        CGContextDrawConicGradient(context, gradient, CGPoint(x: side / 2, y: side / 2), .pi / 2)
+        return context.makeImage()
     }
 
     /// White at the display's edge fading to nothing `width` points in (an inner shadow), drawn

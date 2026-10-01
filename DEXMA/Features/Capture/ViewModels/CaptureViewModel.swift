@@ -89,7 +89,10 @@ final class CaptureViewModel {
                 router?.showCaptureOnboarding()
                 return
             }
-            begin()
+            let pointer = NSEvent.mouseLocation
+            guard let screen = NSScreen.screens.first(where: { NSMouseInRect(pointer, $0.frame, false) })
+                    ?? NSScreen.screens.first else { return }
+            begin(on: screen, freeze: ScreenFreezer.freeze)
         }
     }
 
@@ -112,10 +115,10 @@ final class CaptureViewModel {
         cancel()
     }
 
-    private func begin() {
-        let pointer = NSEvent.mouseLocation
-        guard !isActive, let screen = NSScreen.screens.first(where: { NSMouseInRect(pointer, $0.frame, false) })
-                ?? NSScreen.screens.first else { return }
+    /// Capture mode on `screen`: the overlay comes up at once (glow and hint), the frozen picture
+    /// (`freeze`) a moment later. Strokes are taken from the start.
+    private func begin(on screen: NSScreen, freeze: @escaping (NSScreen) async throws -> FrozenScreen) {
+        guard !isActive else { return }
         generation += 1
         let id = generation
         phase = .freezing
@@ -124,7 +127,7 @@ final class CaptureViewModel {
         waitingStroke = nil
         self.screen = screen
         target?.captureWillBegin()
-        animated = !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        animated = !reduceMotion
         look = CaptureLook.full.scaled(by: effectIntensity)
         panel.setFrame(screen.frame, display: false)
         panel.overlay.prepare(size: screen.frame.size, scale: screen.backingScaleFactor, look: look,
@@ -134,7 +137,7 @@ final class CaptureViewModel {
         panel.overlay.appear()
         Task {
             do {
-                let frozen = try await ScreenFreezer.freeze(screen)
+                let frozen = try await freeze(screen)
                 guard id == generation, !leaving else { return }
                 self.frozen = frozen
                 panel.overlay.showFrozen(frozen.image)
@@ -273,7 +276,7 @@ final class CaptureViewModel {
             } else if pending == nil, elapsed > 2 {
                 pending = PendingCapture(image: image, state: .waiting)
             }
-            if elapsed > Self.insertTimeout {
+            if elapsed > insertTimeout {
                 pending = PendingCapture(image: image, state: .needsRetry)
                 return
             }
@@ -300,6 +303,20 @@ final class CaptureViewModel {
 
     // MARK: Helpers
 
+    private var reduceMotion: Bool {
+        #if DEBUG
+        if let debugReduceMotion { return debugReduceMotion }
+        #endif
+        return NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+    }
+
+    private var insertTimeout: Double {
+        #if DEBUG
+        if let debugInsertTimeout { return debugInsertTimeout }
+        #endif
+        return Self.insertTimeout
+    }
+
     /// Below the menu bar (and the notch), where the hint pill goes.
     private static func hintTop(on screen: NSScreen) -> CGFloat {
         let menuBar = screen.frame.maxY - screen.visibleFrame.maxY
@@ -307,7 +324,19 @@ final class CaptureViewModel {
     }
 
     #if DEBUG
+    @ObservationIgnored var debugReduceMotion: Bool?
+    @ObservationIgnored var debugInsertTimeout: Double?
     var debugPanel: CaptureOverlayPanel { panel }
+    func debugForgetLastMethod() { lastMethod = nil }
     var debugAttacher: ClaudeAttacher { attacher }
+
+    /// Capture mode on `screen` with `frozen` standing in for ScreenCaptureKit's picture, arriving
+    /// after `delay` seconds.
+    func debugBegin(on screen: NSScreen, frozen: FrozenScreen, delay: Double) {
+        begin(on: screen) { _ in
+            try await Task.sleep(for: .seconds(delay))
+            return frozen
+        }
+    }
     #endif
 }

@@ -192,8 +192,8 @@ final class CaptureOverlayView: NSView {
             lift.opacity = 0
             lift.isHidden = false
         }
-        let begin = CACurrentMediaTime() + morph * 0.6
-        let duration = animated ? look.morph * 0.8 : 0
+        let begin = CACurrentMediaTime() + morph * 0.5
+        let duration = animated ? look.morph * 0.7 : 0
         fade(dim, to: Float(look.selectedDim), duration: duration, begin: begin)
         fade(lift, to: 1, duration: duration, begin: begin)
         if animated {
@@ -203,7 +203,7 @@ final class CaptureOverlayView: NSView {
             let about = Self.scale(look.lift, about: CGPoint(x: rect.midX, y: rect.midY), in: stroke)
             animate(stroke, "transform", to: NSValue(caTransform3D: about), duration: duration, begin: begin)
         }
-        DispatchQueue.main.asyncAfter(deadline: .now() + morph * 0.6 + duration + (animated ? look.hold : 0), execute: completion)
+        DispatchQueue.main.asyncAfter(deadline: .now() + morph * 0.5 + duration + (animated ? look.hold : 0), execute: completion)
     }
 
     // MARK: Leaving
@@ -235,6 +235,7 @@ final class CaptureOverlayView: NSView {
         opacity.values = [1, 1, 0]
         opacity.keyTimes = [0, 0.82, 1]
         let shadow = CABasicAnimation(keyPath: "shadowOpacity")
+        shadow.fromValue = lift.shadowOpacity
         shadow.toValue = 0
         shadow.duration = duration * 0.5
         let group = CAAnimationGroup()
@@ -243,6 +244,7 @@ final class CaptureOverlayView: NSView {
         // Pulled in: slow to leave, quicker and quicker toward the notch.
         group.timingFunction = CAMediaTimingFunction(controlPoints: 0.5, 0, 0.85, 0.45)
         let round = CABasicAnimation(keyPath: "cornerRadius")
+        round.fromValue = liftImage.cornerRadius
         round.toValue = min(size.width, size.height) / 2
         round.duration = duration
         round.timingFunction = group.timingFunction
