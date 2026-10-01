@@ -26,6 +26,18 @@ app you were using. When closed, DEXMA is invisible.
   Under the pointer, each tab and button turns into a small drop of liquid glass: it swells
   for a moment, then a gentle lens and highlight follow the pointer; it squashes when you
   press it (with a light tick), and the selection slides between tabs like a droplet.
+- **Draw to ask Claude:** press <kbd>⌥</kbd><kbd>⇧</kbd><kbd>`</kbd> from anywhere (or the
+  pencil at the right end of the notch's band, on any tab, or *Draw to Ask Claude* in the
+  menu bar). The screen freezes, dims slightly and a soft glow runs around its edges. Draw
+  around anything: your stroke morphs into a rounded box, the selection lifts, flies up into
+  the notch, and the notch opens on the Claude tab with the picture already in the message
+  box and the cursor there, so you just type your question. Click without dragging to take
+  the window under the pointer. <kbd>Esc</kbd> cancels at any point. Your clipboard is put
+  back right after the picture is pasted in. If claude.ai isn't ready (still loading, or
+  signed out), the picture waits as a small chip in the band and goes in by itself once the
+  message box is there; click the chip to try again, or ✕ to throw it away. Captures stay in
+  memory unless you turn on *Also save captures to ~/Pictures/DEXMA*. Settings also has the
+  shortcut, *Start a new chat for each capture*, and the strength of the capture effects.
 - **Gesture or shortcut:** a two-finger swipe from the top edge of the trackpad, or
   <kbd>⌥</kbd><kbd>`</kbd> from anywhere (you can change the shortcut). Hovering over the
   notch makes it swell slightly; click to open.
@@ -93,19 +105,19 @@ Hardened Runtime is on.
 
 ## Permissions
 
-DEXMA asks for as little as it can. Everything except scroll blocking works with no
-permissions at all.
+DEXMA asks for as little as it can. Everything except scroll blocking and Draw to ask works
+with no permissions at all.
 
 | Permission | Why | Without it |
 | --- | --- | --- |
 | **Accessibility** (optional) | A scroll-only event tap stops the window under your pointer from scrolling while you swipe the terminal open. It sees scroll events only, never keystrokes. | Everything works, but the page under your pointer may scroll a little during a swipe. |
-| **Screen Recording** (optional) | Bends the real screen around the notch. DEXMA captures only the area under its panel, never saves it, and only while the notch moves or the pointer is near it. macOS shows its recording indicator during that time. | A Liquid Glass edge bends the screen instead (macOS 26), or nothing on older macOS. |
+| **Screen Recording** (optional; needed for Draw to ask) | Two uses. **Draw to ask:** when you start a capture, DEXMA takes one still picture of the display you're on (its own windows left out), so you draw on a frozen screen and the part you select can be cropped from it at full resolution. Only the selected part is kept, in memory, until it's in Claude's message box; nothing is saved unless you turn on saving. **Screen warp:** bends the real screen around the notch; DEXMA looks only at the area under its panel, never saves it, and only while the notch moves, is open (Quality) or the pointer is near it. macOS shows its recording indicator meanwhile. | Draw to ask shows a short sheet explaining this, with a button to the right System Settings pane (and *Relaunch DEXMA* if macOS wants that). The warp falls back to a Liquid Glass edge (macOS 26), or nothing on older macOS. |
 | **Login Items** (optional) | *Launch at Login*, via `SMAppService`. macOS may ask you to approve it in System Settings → General → Login Items. | Start DEXMA yourself. |
 | **Files and folders, etc.** (on demand) | Commands you run inside DEXMA's shell count as DEXMA to macOS. So when `ls ~/Desktop` touches a protected folder, macOS asks whether *DEXMA* may access it. | That command gets "Operation not permitted". |
 
 Some things need no permission at all:
 - Raw trackpad touches (through the private MultitouchSupport framework).
-- The global shortcut (Carbon `RegisterEventHotKey`).
+- The global shortcuts (Carbon `RegisterEventHotKey`).
 - Hover detection (mouse-moved monitors).
 
 The welcome window, and the *Welcome & Permissions…* item in the menu bar, show whether
@@ -120,14 +132,16 @@ The app uses a feature-based MVVM layout (AppKit + SwiftUI), with one type per f
 - `DEXMA/Core/`: shared building blocks with no UI: spring animation, notch geometry, the
   settings store, permissions, launch at login.
 - `DEXMA/Features/`: one folder per feature: `Notch`, `Terminal`, `WebTab`, `Search`, `Gestures`,
-  `LiquidMotion`, `ScreenWarp`, `HotKey`, `MenuBar`, `Settings` and `Onboarding`. Each is
+  `LiquidMotion`, `ScreenWarp`, `HotKey`, `MenuBar`, `Settings`, `Onboarding` and `Capture`
+  (Draw to ask). Each is
   split into `Models/`, `ViewModels/`, `Views/` and `Services/` (and `Shaders/` for Metal),
   as far as it needs them.
 - `DEXMA/Resources/`: the asset catalog with the app icon.
 - `DEXMA/Debug/`: self-checks that only exist in Debug builds (`-selftest`, `-snapshot`,
-  `-effecttest`, `-tabtest`, `-swipetest`, `-hovertest`, `-claudeprobe`, `-warptest`).
+  `-effecttest`, `-tabtest`, `-swipetest`, `-hovertest`, `-claudeprobe`, `-capturetest`,
+  `-warptest`).
 - `DEXMATests/`: unit tests (Swift Testing), in the same `Core/` and `Features/` folders:
   gesture recognition, geometry, the liquid effect, search addresses, shortcut recording,
-  settings migration.
+  settings migration, the capture's selection, crop and stroke maths.
 - `DEXMAUITests/`: Xcode's UI test template.
 - `CLAUDE.md`: architecture notes, rules and a development log.

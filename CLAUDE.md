@@ -15,6 +15,9 @@ like a third-party app.
   when the panel closes — **Search** — a search field over a `WKWebView` (Google search, or
   any address) — and **Claude** — claude.ai in a `WKWebView`. See *Tab UI* and *WebTab*.
 - **Close:** swipe up, Esc, or hotkey. Focus returns to the previously active app.
+- **Draw to ask:** a Capture button at the right end of the band (every tab) or its own
+  shortcut (default ⌥⇧`) freezes the display under the pointer; you draw around anything, and
+  the crop flies into the notch and lands in claude.ai's message box. See *Capture*.
 
 ## Architecture — feature-based MVVM
 Sources live in `DEXMA/`, a synchronized folder: adding, moving or renaming files needs no
@@ -144,11 +147,24 @@ Layers — keep them separated:
   `ShortcutInput` (key press → shortcut, pure).
 - `Onboarding/` — `OnboardingViewModel`, `OnboardingRecord` (the `didShowOnboarding` flag),
   `OnboardingView`, `OnboardingWindowController`.
+- `Capture/` — Draw to ask (see *Capture*). Models: `CaptureSelection` (stroke → box, click →
+  window; pure), `CaptureCrop` (points → native pixels; pure), `StrokeGeometry` (Catmull–Rom,
+  resampling, rounded-rect points for the morph; pure), `CaptureLook` (every constant +
+  `scaled(by:)`), `CaptureBandLayout` (button/chip widths; pure), `FrozenScreen`,
+  `CapturedImage`, `PendingCapture`, `CapturePhase`, `ClaudeInsertMethod`. Services:
+  `ScreenFreezer` (SCScreenshotManager, DEXMA excluded, window frames), `CaptureEncoder` (crop +
+  PNG + thumbnail, off main), `ClaudeAttacher` (into claude.ai's composer), `PasteboardSnapshot`,
+  `CaptureArchive` (~/Pictures/DEXMA, opt-in), `CaptureHandoffTarget` (protocol; `NotchViewModel`
+  implements it). ViewModels: `CaptureViewModel` (the flow), `CaptureOnboardingViewModel`.
+  Views: `CaptureOverlayPanel` (screen-saver level, non-activating), `CaptureOverlayView` (frozen
+  frame, dim, lift, flight), `StrokeLayer`, `EdgeGlowLayer`, `CaptureHintView`,
+  `CaptureOnboardingView`/`…WindowController`. The band's `CaptureControls` and
+  `PendingCaptureChip` live in `Notch/Views` (they're band parts, `BandButtonStyle`).
 
 **Debug** (DEBUG only) — `DebugHarness` dispatches the launch flags to `SelfTest`
 (`-selftest`), `SnapshotTest` (`-snapshot <dir>`), `EffectTest` (`-effecttest <dir>`),
 `TabTest` (`-tabtest`), `SwipeTest` (`-swipetest`), `HoverTest` (`-hovertest`, `-bandshot`),
-`ClaudeProbe` (`-claudeprobe`), `SizeTest` (`-sizetest`) and `WarpTest` (`-warptest <dir>`, `-captureidle <s>`); `Support/` holds `DebugImages`,
+`ClaudeProbe` (`-claudeprobe`), `CaptureTest` (`-capturetest`), `SizeTest` (`-sizetest`) and `WarpTest` (`-warptest <dir>`, `-captureidle <s>`); `Support/` holds `DebugImages`,
 `FramePacingProbe` and `NotchViewModel.waitForRest()` (see *Debug snapshots*).
 
 ## Tab UI (the spec, 2026-10-01, branch `feature/claude-tab`)
@@ -207,6 +223,59 @@ One component (`Features/WebTab/`), two configurations (`WebTabConfiguration`):
   New chat (⌘⇧R) loads /new in the same tab; Open in browser (⌘⇧O) opens the current
   conversation and closes the panel; ⌘L shows `URLEntryField` over the band to paste a link
   (e.g. an email sign-in link); page zoom from Settings (`claudeZoom`, default 100 %).
+
+## Capture (Draw to ask, 2026-10-02, branch `feature/capture`)
+- **Start:** the band's Capture button (rightmost in the right region on every tab, 32 × 28,
+  `pencil.and.scribble`, tooltip with the shortcut; the tab's context gets `contextRegion`, the
+  rest), the capture shortcut (`captureHotKey`, default ⌥⇧`, a second `HotKeyRegistrar`; both
+  pause while either is recorded; pressing it again cancels), or the menu bar item. The panel's
+  own shortcut cancels a capture in progress. Without Screen Recording (checked off the main
+  thread, cached once yes) the DEXMA-styled sheet (`CaptureOnboarding…`) explains why, opens
+  the pane, polls, then checks ScreenCaptureKit really works (`ScreenFreezer.isWorking`) and
+  offers "Relaunch DEXMA" if macOS wants that.
+- **Freeze:** the overlay (one `CaptureOverlayPanel`, made at launch) comes up at once on the
+  display under the pointer, transparent, edge glow + hint fading in; `ScreenFreezer` takes one
+  `SCScreenshotManager` picture at native pixels with `excludingApplications: [DEXMA]` (so the
+  closing panel never needs to finish first; measured 22–53 ms) plus the other apps' windows
+  front to back (`CGWindowListCopyWindowInfo` order, `SCWindow.frame`, layers 0–19). The frozen
+  frame fades in over the live screen, then dims 18 %. Strokes are taken before it arrives.
+- **Draw:** `StrokeLayer` — white 4 pt, round caps, Catmull–Rom through points ≥ 1.5 pt apart;
+  glow = three wider white strokes in groups with group opacity; shimmer = a pre-rendered tint
+  stripe sliding under a mask of the stroke. Chunks of 48 segments are frozen once complete; only
+  the last chunk is re-stroked per move; the groups and shimmer only cover the stroke's extent.
+  Measured: 1,200 moves at 120 Hz, p95 0.4 ms main thread per move, 0 late frames.
+- **Select:** box + 8 pt, clamped, ≥ 24 pt (`CaptureSelection`); a click (< 4 pt travel) picks
+  the frontmost window under it (the desktop: the whole display). The core and first glow morph
+  into the rounded rect (≤ 480 points, `StrokeGeometry.roundedRectPoints` starting nearest the
+  stroke's start, same direction); the other tiers fade in on it; the detailed stroke crossfades
+  out. Then the outside dims to 42 % and the selection (same image, `contentsRect`) lifts to
+  1.02 with a shadow; haptic tick (`Haptics.tap`). Cropped + PNG-encoded off main meanwhile.
+- **Hand-off:** the lifted image flies (CA keyframes, ease-in "suction", droplet stretch,
+  rounding) into the notch's centre (the hardware notch has no pixels: it vanishes into it) or
+  off the top if the panel opens on another display; the rest fades. At 80 % the notch opens on
+  the Claude tab (`openForCapture`: the normal open, so its anticipation swell, jelly and screen
+  warp are the "liquid pull"); the overlay orders out when the flight ends, before the panel
+  settles (measured: opening ~0.93 s after release, overlay gone ~0.95 s, at rest ~1.56 s).
+  Reduce Motion: no morph/lift/flight, a 0.15 s fade, then the open. Esc (or the shortcut, a
+  Space switch, a display change) cancels at any stage until the notch opens.
+- **Insert (`ClaudeAttacher`), chosen: (a) real paste.** Once the Claude tab is open, at rest
+  and key and the composer is there (`chat-input`, TipTap/ProseMirror; not `/login`): save the
+  clipboard (`PasteboardSnapshot`), put the PNG on it, `NSApp.sendAction(paste:)` to the web view,
+  restore the clipboard as soon as the page's paste event has fired (or 1.5 s; only if nothing
+  else was copied meanwhile), verify (an attachment element appears near the composer, or the
+  page handled the paste event with the file). Fallbacks: (b) the `file-upload` input via
+  DataTransfer + change event, (c) a scripted paste, then drop, event. Then the caret goes to
+  the message box. Why (a): trusted input, exactly what a user's ⌘V does, so claude.ai's own
+  paste handling (upload, thumbnail, React state) runs unchanged; no temp files.
+- **Pending:** not ready (signed out, loading, panel closed) → the chip (thumbnail 20 pt, radius
+  6, ✕) left of the Capture button; polled every 250 ms, attaches by itself, gives up after 60 s
+  (orange edge; a click shows the Claude tab and retries). "Start a new chat for each capture"
+  loads /new as the notch opens. "Also save captures to ~/Pictures/DEXMA" (off by default);
+  otherwise captures only live in memory. Capture effects (edge glow + shimmer) follow the glass
+  strength unless set apart (Settings → Draw to ask Claude).
+- **Cost:** the window server spends ~50 % of a core while anything in the overlay animates at
+  120 Hz (glow turning, shimmer) — the same as the notch opening and closing nonstop (49 %);
+  ~4 % with the effects still (Reduce Motion) or off. Main thread: begin 5–11 ms once.
 
 ## Animation model
 - `progress` is always the on-screen (presentation) value. `SpringDriver` steps it each
@@ -323,6 +392,8 @@ One component (`Features/WebTab/`), two configurations (`WebTabConfiguration`):
   `feature/tabs`; pushed, not merged: the user tests first).
 - [x] 15. Settings: open panel size first, "Look & performance" (glass effect strength,
   Performance / Balanced / Quality screen-warp slider) (same branch).
+- [x] 16. Draw to ask (capture → claude.ai) (branch `feature/capture`, from
+  `feature/claude-tab`; pushed, not merged: the user tests first).
 
 The user asked (2026-10-01) to run phases 2–8 without stopping between them: per phase, read
 package sources, build to 0 errors/0 warnings, launch-check, `git commit -m "Phase N: …"`,
@@ -529,6 +600,20 @@ update Progress below.
   pages, web views, terminal follow; the pill drops to icons when labels don't fit),
   `-warptest` (Balanced stops capture once open, Performance never captures).
 
+- **Phase 16 (Draw to ask):** see *Capture*. Verified with `-capturetest` (synthetic frozen
+  screen; real freezes when launched with `open`): overlay orientation, drawing pacing, outline
+  on the rectangle after the morph, crop pixel size (1256×752 for a 628×376 pt box at 2x),
+  overlay gone before the panel settles, real paste into a stand-in of claude.ai's composer
+  (served as https://claude.ai/new) with the clipboard restored and the caret in the box,
+  click-to-window (1000×640), Esc while freezing/drawing/selecting/flying, the file-input
+  fallback, the chip (signed out → attaches when the box appears; timeout → retry), Reduce
+  Motion, real freezes 22–53 ms at 3024×1964 with the open panel absent. On the real claude.ai:
+  the composer is `[data-testid=chat-input]` (TipTap), the attach input `file-upload`; a real
+  paste reached the page with the file (probe, 2026-10-02). Unverified: the attachment on the
+  real composer and sending it (the Claude tab got signed out between two probe runs that day —
+  cause unknown; the user has to sign in again), the Settings section's look, saving copies,
+  new chat per capture, the onboarding sheet and relaunch, a second display, the feel.
+
 ## Hardware test checklist (needs the user)
 - Tabs: ⌘1/⌘2/⌘L, clicking segments, focus after reopening (page vs field), Esc on both tabs.
 - Search: a Google search, typing in Google's own fields, IME in the field, link clicks,
@@ -547,6 +632,10 @@ update Progress below.
   horizontal scrolling inside web pages; the pill, indicator, dots and context following it.
 - Terminal context: cwd updates after `cd`, the running dot during `sleep 5`.
 - Card stroke/highlight; no seams on the web tabs.
+- Draw to ask: see the checklist given on 2026-10-02 (button on all tabs, ⌥⇧` with the panel
+  closed, frozen video, glow/hint, long scribbles, morph, click-to-window, Esc at every stage,
+  Retina sharpness, flight, attaches and sends, clipboard restored, chip when signed out, new
+  chat, onboarding, second display, Reduce Motion, no DEXMA in captures).
 - Claude: sign-in (Google popup, email + ⌘L link), still signed in after a restart, focus
   in the message box, New chat, Open in browser, external links in the browser, pasting
   and dragging an image, page zoom.
@@ -557,7 +646,10 @@ Screen Recording isn't granted to the CLI, but an app can render its own window.
 frontmost app at each step) and `-snapshot <dir>`: they type `ls /` into the shell, render the panel at progress
 0/0.15/0.5/1 to PNGs, and quit. Run the binary directly:
 `.../Debug/DEXMA.app/Contents/MacOS/DEXMA -snapshot /tmp/snap`, then view the PNGs.
-`-hovertest <dir>` checks the band controls' liquid glass (lens, confinement, exit, press,
+`-capturetest <dir>` checks Draw to ask end to end (see Progress, Phase 16; it covers the
+built-in display with the overlay for ~2 min and borrows the clipboard, restoring it); launch it
+with `open -n <app> --args -capturetest <dir>` to include real freezes, then read
+`<dir>/report.txt`. `-hovertest <dir>` checks the band controls' liquid glass (lens, confinement, exit, press,
 indicator, Off, Reduce Motion, pacing with typing); `-bandshot <dir>` just captures the open
 band at rest (for comparing builds). `-tabtest <dir>` checks the tabs and the Search tab (needs network: it runs a real Google
 search; launched with `open` it also captures the real screen). `-effecttest <dir>` checks the liquid effect against the window server's own composite of the
@@ -638,3 +730,14 @@ and never quits (wrap runs in a watchdog).
   becoming key; keep it off the open path when the page had the keyboard.
 - SwiftUI shaders: `layerEffect`/`distortionEffect` exist on macOS 14; `Shader.compile(as:)`
   is macOS 15+ (on 14, render the effect once at launch to warm it).
+- KVC/`CAAnimation` values of `CATransform3D` must be `NSValue(caTransform3D:)`.
+- A `CABasicAnimation` with only `toValue`, added right after setting the model value, jumps:
+  give it `fromValue`.
+- Animating a path re-strokes it in the window server every frame: five display-wide shape
+  layers × 1,500 curves made it fall behind (the window picture showed a stale mid-morph frame).
+- `CGContextDrawConicGradient` has no Swift member name: call the C function.
+- Measuring the window server: `ps -o time= -p $(pgrep -x WindowServer)` before/after. Any
+  120 Hz animation costs it ~50 % of a core on the reference Mac (notch or overlay alike).
+- `pkill -f <pattern>` in a watchdog also matches the shell running it (killed the tool call):
+  poll for the report file instead.
+- `CGWindowListCopyWindowInfo` lists front to back; names need Screen Recording, bounds don't.
