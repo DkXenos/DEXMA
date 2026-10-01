@@ -19,6 +19,10 @@ final class NotchPanel: NSPanel {
     var onInput: ((NSEvent.EventType) -> Void)?
     /// Any other ⌘-key (the key without modifiers, lowercased). Return true if handled.
     var onCommandKey: ((String) -> Bool)?
+    /// A ⌘⇧-key (lowercased). Return true if handled.
+    var onShiftCommandKey: ((String) -> Bool)?
+    /// ⌃Tab (forward) or ⌃⇧Tab (backward). Return true if handled.
+    var onCycleTabs: ((_ backward: Bool) -> Bool)?
 
     init(frame: CGRect) {
         super.init(contentRect: frame, styleMask: [.borderless, .nonactivatingPanel],
@@ -57,6 +61,10 @@ final class NotchPanel: NSPanel {
         case .keyDown where event.keyCode == UInt16(kVK_Escape)
             && event.modifierFlags.intersection(.deviceIndependentFlagsMask).isEmpty:
             if onEscape?() == true { return }
+        case .keyDown where event.keyCode == UInt16(kVK_Tab)
+            && event.modifierFlags.intersection(.deviceIndependentFlagsMask).contains(.control):
+            let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+            if onCycleTabs?(flags.contains(.shift)) == true { return }
         case .leftMouseDown:
             if onMouseDown?() == true { return }
         default:
@@ -77,6 +85,10 @@ final class NotchPanel: NSPanel {
     // field or page) here.
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
         let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        if flags == [.command, .shift], let key = event.charactersIgnoringModifiers?.lowercased(),
+           onShiftCommandKey?(key) == true {
+            return true
+        }
         guard flags == .command, let key = event.charactersIgnoringModifiers?.lowercased() else {
             return super.performKeyEquivalent(with: event)
         }

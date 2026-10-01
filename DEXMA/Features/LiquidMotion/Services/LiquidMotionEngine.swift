@@ -53,7 +53,8 @@ final class LiquidMotionEngine {
         content.onSnapshotRefreshed = nil
         content = newContent
         newContent.onSnapshotRefreshed = { [weak self] in self?.snapshotRefreshed() }
-        if effects.isActive { effects.show(newContent.motionSnapshot()) }
+        // Mid-motion the new tab's picture takes over (if it has one yet).
+        if effects.isActive, let snapshot = newContent.motionSnapshot() { effects.show(snapshot) }
         lastContentChange = CACurrentMediaTime()
         scheduleIdleSnapshot()
     }
@@ -76,7 +77,10 @@ final class LiquidMotionEngine {
         }
         guard isEnabled else { return false }
         bender?.prepare()
-        effects.begin(with: content.motionSnapshot())
+        // No picture yet (a web page shown before WebKit's first one arrived): this motion runs
+        // without the effect, the live content fading as it always did — never a blank card.
+        guard let snapshot = content.motionSnapshot() else { return false }
+        effects.begin(with: snapshot)
         return true
     }
 

@@ -9,12 +9,20 @@ app you were using. When closed, DEXMA is invisible.
 
 - **Always ready:** one zsh starts when DEXMA launches and keeps running while the panel
   is closed. Your history, working directory and running jobs are still there next time.
-- **Tabs:** *Terminal* and *Search* sit in the strip left of the notch (<kbd>⌘</kbd><kbd>1</kbd>,
-  <kbd>⌘</kbd><kbd>2</kbd>). Search has a field at the top of the panel: type words to search
-  Google, or an address to open it, and press Return. <kbd>⌘</kbd><kbd>L</kbd> jumps to the
-  field from anywhere in the panel. Right of the notch are back, forward, reload and open in
-  your browser (<kbd>⌘</kbd><kbd>[</kbd>, <kbd>⌘</kbd><kbd>]</kbd>, <kbd>⌘</kbd><kbd>R</kbd>).
-  The page stays loaded while the panel is closed. Nothing is loaded until your first search.
+- **Tabs:** *Terminal*, *Search* and *Claude*, in a Dynamic-Island-style pill left of the
+  notch. Switch with <kbd>⌘</kbd><kbd>1</kbd>–<kbd>3</kbd>, <kbd>⌃</kbd><kbd>Tab</kbd>, a click,
+  or by swiping sideways with two fingers (the pages follow your fingers). Right of the
+  notch is the tab's context: the terminal's folder (with a green dot while a command
+  runs), the page's site, and the tab's buttons. Dots under the card show where you are.
+- **Search:** a field at the top of the card: type words to search Google, or an address to
+  open it, and press Return. <kbd>⌘</kbd><kbd>L</kbd> jumps to the field. Back, forward and
+  reload are <kbd>⌘</kbd><kbd>[</kbd>, <kbd>⌘</kbd><kbd>]</kbd>, <kbd>⌘</kbd><kbd>R</kbd>; Reset
+  clears it. Nothing is loaded until your first search.
+- **Claude:** claude.ai, loaded at launch so it's instant, and you stay signed in. Links to
+  other sites open in your browser. <kbd>⌘</kbd><kbd>⇧</kbd><kbd>R</kbd> starts a new chat,
+  <kbd>⌘</kbd><kbd>⇧</kbd><kbd>O</kbd> opens the conversation in your browser, and
+  <kbd>⌘</kbd><kbd>L</kbd> lets you paste a link (handy for an email sign-in link). Page zoom
+  is in Settings.
   Under the pointer, each tab and button turns into a small drop of liquid glass: it swells
   for a moment, then a gentle lens and highlight follow the pointer; it squashes when you
   press it (with a light tick), and the selection slides between tabs like a droplet.
@@ -107,13 +115,13 @@ The app uses a feature-based MVVM layout (AppKit + SwiftUI), with one type per f
   connects everything at launch.
 - `DEXMA/Core/`: shared building blocks with no UI: spring animation, notch geometry, the
   settings store, permissions, launch at login.
-- `DEXMA/Features/`: one folder per feature: `Notch`, `Terminal`, `Search`, `Gestures`,
+- `DEXMA/Features/`: one folder per feature: `Notch`, `Terminal`, `WebTab`, `Search`, `Gestures`,
   `LiquidMotion`, `ScreenWarp`, `HotKey`, `MenuBar`, `Settings` and `Onboarding`. Each is
   split into `Models/`, `ViewModels/`, `Views/` and `Services/` (and `Shaders/` for Metal),
   as far as it needs them.
 - `DEXMA/Resources/`: the asset catalog with the app icon.
 - `DEXMA/Debug/`: self-checks that only exist in Debug builds (`-selftest`, `-snapshot`,
-  `-effecttest`, `-tabtest`, `-warptest`).
+  `-effecttest`, `-tabtest`, `-swipetest`, `-hovertest`, `-claudeprobe`, `-warptest`).
 - `DEXMATests/`: unit tests (Swift Testing), in the same `Core/` and `Features/` folders:
   gesture recognition, geometry, the liquid effect, search addresses, shortcut recording,
   settings migration.

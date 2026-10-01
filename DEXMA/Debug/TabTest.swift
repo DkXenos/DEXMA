@@ -29,11 +29,11 @@ enum TabTest {
             await restSwap("search empty", panel: panel, notch: notch, dir: dir)
 
             press("1", panel)
-            try? await Task.sleep(for: .milliseconds(200))
+            try? await Task.sleep(for: .milliseconds(700))
             report("⌘1 → Terminal tab", ok: notch.tab == .terminal && search.card.isHidden
                    && panel.firstResponder === session.terminalView, panel, notch)
             press("l", panel)
-            try? await Task.sleep(for: .milliseconds(200))
+            try? await Task.sleep(for: .milliseconds(700))
             report("⌘L → Search tab, field focused", ok: notch.tab == .search && fieldFocused(search, panel),
                    panel, notch)
 
@@ -85,6 +85,7 @@ enum TabTest {
             report("tab switched mid-open ends on the live terminal", ok: notch.tab == .terminal
                    && !notch.effects.isActive && !session.container.isHidden && search.card.isHidden
                    && panel.firstResponder === session.terminalView, panel, notch)
+            await threeTabs(panel: panel, notch: notch, session: session, dir: dir)
             notch.close()
             _ = await notch.waitForRest()
             report("closed on terminal", ok: session.container.isHidden && search.card.isHidden, panel, notch)
@@ -93,6 +94,87 @@ enum TabTest {
     }
 
     // MARK: Checks
+
+    /// The Claude tab, ⌃Tab, the band's context (terminal directory and running dot, Search's
+    /// page colour), Search's Reset, and open/close on Claude.
+    private static func threeTabs(panel: NotchPanel, notch: NotchViewModel, session: ShellSession, dir: URL) async {
+        let claude = notch.claude.session
+        let search = notch.search.session
+        // The terminal's context: the directory follows cd; the dot follows a running command.
+        session.terminalView.process.send(data: ArraySlice(Array("cd /tmp\r".utf8)))
+        try? await Task.sleep(for: .milliseconds(600))
+        report("cd /tmp → band shows \(notch.terminalContext.text)",
+               ok: session.status.directory.hasSuffix("/tmp"), panel, notch)
+        session.terminalView.process.send(data: ArraySlice(Array("sleep 2\r".utf8)))
+        try? await Task.sleep(for: .milliseconds(700))
+        let running = session.status.isRunningCommand
+        let dotShown = !notch.runningDot.isHidden
+        capture(panel, dir, "terminal-running")
+        try? await Task.sleep(for: .seconds(2))
+        report("sleep 2 → running \(running), dot shown \(dotShown); after it: running \(session.status.isRunningCommand), dot shown \(!notch.runningDot.isHidden)",
+               ok: running && dotShown && !session.status.isRunningCommand && notch.runningDot.isHidden, panel, notch)
+        session.terminalView.process.send(data: ArraySlice(Array("cd\r".utf8)))
+
+        // ⌘3 → Claude (loaded at launch), its page focused.
+        press("3", panel)
+        try? await Task.sleep(for: .seconds(1))
+        report("⌘3 → Claude, page has the keyboard (\(claude.webView.url?.absoluteString ?? "-"))",
+               ok: notch.tab == .claude && claude.hasPage && claude.card.revealsPage
+               && (panel.firstResponder as? NSView)?.isDescendant(of: claude.webView) == true, panel, notch)
+        capture(panel, dir, "claude-tab")
+        report(String(format: "Claude card takes the page's colour (%@)", "\(claude.card.cardColor)"),
+               ok: claude.card.cardColor != WebTabView.defaultColor, panel, notch)
+        try? await Task.sleep(for: .seconds(1))
+        await restSwap("claude", panel: panel, notch: notch, dir: dir)
+
+        // ⌘L on Claude: the URL field over the band; Esc puts it away.
+        press("l", panel)
+        try? await Task.sleep(for: .milliseconds(200))
+        let fieldShown = !notch.urlField.isHidden && (panel.firstResponder as? NSTextView)?.delegate === notch.urlField
+        capture(panel, dir, "claude-url-field")
+        _ = notch.debugEscape()
+        try? await Task.sleep(for: .milliseconds(200))
+        report("⌘L shows the URL field (\(fieldShown)), Esc hides it, panel stays open",
+               ok: fieldShown && notch.urlField.isHidden && notch.state == .open, panel, notch)
+
+        // ⌘⇧R: a new chat.
+        pressShift("r", panel)
+        try? await Task.sleep(for: .seconds(2))
+        report("⌘⇧R → \(claude.webView.url?.absoluteString ?? "-")",
+               ok: claude.webView.url?.host == "claude.ai", panel, notch)
+
+        // ⌃Tab cycles: Claude → Terminal → Search.
+        cycle(panel, backward: false)
+        try? await Task.sleep(for: .milliseconds(500))
+        let first = notch.tab
+        cycle(panel, backward: false)
+        try? await Task.sleep(for: .milliseconds(500))
+        report("⌃Tab cycles: claude → \(first) → \(notch.tab)", ok: first == .terminal && notch.tab == .search, panel, notch)
+
+        // Search's Reset: back to the empty state, no history.
+        search.load("dexma")
+        try? await Task.sleep(for: .seconds(2.5))
+        let colour = search.card.cardColor
+        notch.search.reset()
+        try? await Task.sleep(for: .milliseconds(300))
+        report("Search page colour \(colour == WebTabView.defaultColor ? "unchanged" : "taken"); Reset → empty, no history",
+               ok: !search.hasPage && !search.canGoBack && search.card.cardColor == WebTabView.defaultColor, panel, notch)
+
+        // Open/close on Claude: the effect pictures the page (no blank frames).
+        notch.select(.claude)
+        try? await Task.sleep(for: .seconds(1.2))
+        notch.close()
+        try? await Task.sleep(for: .milliseconds(40))
+        let pictured = notch.effects.isActive && notch.effects.snapshot != nil
+        _ = await notch.waitForRest()
+        notch.open()
+        _ = await notch.waitForRest()
+        report("close on Claude ran the effect with its picture (\(pictured)), reopened with the page focused",
+               ok: pictured && notch.tab == .claude && (panel.firstResponder as? NSView)?.isDescendant(of: claude.webView) == true,
+               panel, notch)
+        notch.select(.terminal)
+        try? await Task.sleep(for: .seconds(1))
+    }
 
     /// Live card vs the motion layer with every effect at zero, at rest: must match.
     private static func restSwap(_ label: String, panel: NSPanel, notch: NotchViewModel, dir: URL) async {
@@ -184,11 +266,29 @@ enum TabTest {
         _ = panel.performKeyEquivalent(with: event)
     }
 
-    private static func pageFocused(_ search: SearchSession, _ panel: NSPanel) -> Bool {
+    private static func pressShift(_ key: String, _ panel: NotchPanel) {
+        guard let event = NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [.command, .shift],
+                                           timestamp: ProcessInfo.processInfo.systemUptime,
+                                           windowNumber: panel.windowNumber, context: nil,
+                                           characters: key.uppercased(), charactersIgnoringModifiers: key.uppercased(),
+                                           isARepeat: false, keyCode: 0) else { return }
+        _ = panel.performKeyEquivalent(with: event)
+    }
+
+    private static func cycle(_ panel: NotchPanel, backward: Bool) {
+        guard let event = NSEvent.keyEvent(with: .keyDown, location: .zero,
+                                           modifierFlags: backward ? [.control, .shift] : [.control],
+                                           timestamp: ProcessInfo.processInfo.systemUptime,
+                                           windowNumber: panel.windowNumber, context: nil, characters: "\t",
+                                           charactersIgnoringModifiers: "\t", isARepeat: false, keyCode: 48) else { return }
+        panel.sendEvent(event)
+    }
+
+    private static func pageFocused(_ search: WebTab, _ panel: NSPanel) -> Bool {
         (panel.firstResponder as? NSView)?.isDescendant(of: search.webView) ?? false
     }
 
-    private static func fieldFocused(_ search: SearchSession, _ panel: NSPanel) -> Bool {
+    private static func fieldFocused(_ search: WebTab, _ panel: NSPanel) -> Bool {
         (panel.firstResponder as? NSTextView)?.delegate === search.card.field
     }
 

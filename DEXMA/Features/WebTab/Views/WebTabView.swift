@@ -1,45 +1,50 @@
 import AppKit
 import WebKit
 
-/// The Search tab's page in the content card: a search field across the top and the web page
-/// below it, at the card's fixed size (the content pager clips it to the card's rounded corners
-/// and the notch silhouette), so opening, closing and swiping never resize anything.
+/// A web tab's page in the content card (Search: a search field across the top and the page
+/// below; Claude: the page alone), at the card's fixed size: the content pager clips it to the
+/// card's rounded corners and the notch silhouette, so opening, closing and swiping never
+/// resize anything.
 ///
 /// The card's background (the page's own colour once known, so the card has no seam), the
 /// field's background, its icon and the empty state are drawn in `draw(_:)` (not as layer
 /// properties), so `cacheDisplay` pictures them exactly for the motion layer; only the page
 /// itself has to come from WebKit (`capture(page:)`).
-final class SearchCardView: NSView {
+final class WebTabView: NSView {
     static let fieldHeight: CGFloat = 30
     static let fieldInset: CGFloat = 10
     /// Until a page reports its background: dark grey, like the system's dark surfaces.
     static let defaultColor = NSColor(srgbRed: 0x1C / 255, green: 0x1C / 255, blue: 0x1E / 255, alpha: 1)
 
     let field = NSTextField()
+    let hasField: Bool
     private(set) var webView: WKWebView
-    /// Holds the page. Hidden until the first search: the empty state shows instead.
+    /// Holds the page. Hidden until there's one: the empty state shows instead.
     private let pageClip = NSView()
 
-    init(size: CGSize, webView: WKWebView) {
+    init(size: CGSize, webView: WKWebView, hasField: Bool) {
         self.webView = webView
+        self.hasField = hasField
         super.init(frame: CGRect(origin: .zero, size: size))
         wantsLayer = true
-        // Dark controls, caret and page (Google follows prefers-color-scheme) on the black panel.
+        // Dark controls, caret and page (sites follow prefers-color-scheme) on the black panel.
         appearance = NSAppearance(named: .darkAqua)
 
-        field.isBordered = false
-        field.drawsBackground = false
-        field.focusRingType = .none
-        field.font = .systemFont(ofSize: 13)
-        field.textColor = NSColor(white: 0.92, alpha: 1)
-        field.cell?.isScrollable = true
-        field.cell?.wraps = false
-        field.cell?.usesSingleLineMode = true
-        field.cell?.sendsActionOnEndEditing = false
-        field.placeholderAttributedString = NSAttributedString(
-            string: "Search Google or type a URL",
-            attributes: [.foregroundColor: NSColor(white: 1, alpha: 0.38), .font: NSFont.systemFont(ofSize: 13)])
-        addSubview(field)
+        if hasField {
+            field.isBordered = false
+            field.drawsBackground = false
+            field.focusRingType = .none
+            field.font = .systemFont(ofSize: 13)
+            field.textColor = NSColor(white: 0.92, alpha: 1)
+            field.cell?.isScrollable = true
+            field.cell?.wraps = false
+            field.cell?.usesSingleLineMode = true
+            field.cell?.sendsActionOnEndEditing = false
+            field.placeholderAttributedString = NSAttributedString(
+                string: "Search Google or type a URL",
+                attributes: [.foregroundColor: NSColor(white: 1, alpha: 0.38), .font: NSFont.systemFont(ofSize: 13)])
+            addSubview(field)
+        }
 
         pageClip.wantsLayer = true
         pageClip.isHidden = true
@@ -54,7 +59,7 @@ final class SearchCardView: NSView {
     }
 
     /// The card's background: the page's own once known.
-    var cardColor = SearchCardView.defaultColor {
+    var cardColor = WebTabView.defaultColor {
         didSet { if cardColor != oldValue { needsDisplay = true } }
     }
 
@@ -88,14 +93,17 @@ final class SearchCardView: NSView {
     }
 
     /// A picture of the card as on screen, with `page` (WebKit's own picture of the web view,
-    /// see `SearchSession`) where the page is.
+    /// see `WebTab`) where the page is. Nil while the page is drawn but its picture isn't there
+    /// yet: better no liquid effect for that motion than a blank card.
     func capture(page: CGImage?) -> ContentSnapshot? {
         guard bounds.width > 0, bounds.height > 0 else { return nil }
+        if showsPage, revealsPage, page == nil { return nil }
         // With a page, AppKit draws only the field strip above it: drawing the web view would
         // make WebKit render the page synchronously (~20 ms). WebKit's picture goes in instead.
         let pageFrame = pageClip.frame
+        let stripHeight = bounds.height - pageFrame.maxY
         let drawn = showsPage
-            ? CGRect(x: 0, y: pageFrame.maxY, width: bounds.width, height: bounds.height - pageFrame.maxY)
+            ? CGRect(x: 0, y: pageFrame.maxY, width: bounds.width, height: max(stripHeight, 1))
             : bounds
         guard let rep = bitmapImageRepForCachingDisplay(in: drawn) else { return nil }
         cacheDisplay(in: drawn, to: rep)
@@ -110,7 +118,7 @@ final class SearchCardView: NSView {
             bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
         // In points and y-up, like this unflipped view.
         context.scaleBy(x: scale, y: scale)
-        context.draw(strip, in: drawn)
+        if stripHeight > 0 { context.draw(strip, in: drawn) }
         context.setFillColor(cardColor.cgColor)
         context.fill(pageFrame)
         if let page, revealsPage { context.draw(page, in: pageFrame) }
@@ -125,17 +133,20 @@ final class SearchCardView: NSView {
                       width: max(bounds.width - 2 * inset, 0), height: Self.fieldHeight)
     }
 
-    /// Below the field, edge to edge (the card rounds its bottom corners).
+    /// Below the field (or the whole card), edge to edge: the card rounds its corners.
     private var pageRect: CGRect {
-        CGRect(x: 0, y: 0, width: bounds.width,
-               height: max(bounds.height - Self.fieldHeight - 2 * Self.fieldInset, 0))
+        guard hasField else { return bounds }
+        return CGRect(x: 0, y: 0, width: bounds.width,
+                      height: max(bounds.height - Self.fieldHeight - 2 * Self.fieldInset, 0))
     }
 
     private func layoutCard() {
-        let fieldRect = self.fieldRect
-        let height = ceil(field.intrinsicContentSize.height)
-        field.frame = CGRect(x: fieldRect.minX + 30, y: fieldRect.midY - height / 2,
-                             width: max(fieldRect.width - 42, 0), height: height)
+        if hasField {
+            let fieldRect = self.fieldRect
+            let height = ceil(field.intrinsicContentSize.height)
+            field.frame = CGRect(x: fieldRect.minX + 30, y: fieldRect.midY - height / 2,
+                                 width: max(fieldRect.width - 42, 0), height: height)
+        }
         pageClip.frame = pageRect
         // Set outright: autoresizing from the clip's initial zero size would double it.
         webView.frame = pageClip.bounds
@@ -144,6 +155,7 @@ final class SearchCardView: NSView {
     override func draw(_ dirtyRect: NSRect) {
         cardColor.setFill()
         bounds.fill()
+        guard hasField else { return }
         NSColor(white: 1, alpha: 0.1).setFill()
         NSBezierPath(roundedRect: fieldRect, xRadius: 9, yRadius: 9).fill()
         let glass = NSImage(systemSymbolName: "magnifyingglass", accessibilityDescription: nil)?

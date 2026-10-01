@@ -45,6 +45,14 @@ struct SettingsView: View {
                 }
             }
 
+            Section("Claude tab") {
+                LabeledContent("Page zoom") {
+                    Slider(value: $settings.claudeZoom, in: AppSettings.claudeZoomRange, step: 0.05)
+                    Text("\(Int((settings.claudeZoom * 100).rounded())) %").monospacedDigit()
+                        .frame(width: 56, alignment: .trailing)
+                }
+            }
+
             Section("Animation") {
                 Slider(value: $settings.animationDuration, in: AppSettings.durationRange) {
                     Text("Speed")
@@ -58,8 +66,8 @@ struct SettingsView: View {
                 Toggle(isOn: $settings.screenWarp) {
                     Text("Bend the screen around the notch")
                     Text("""
-                        Warps and colour-splits what's behind the notch while it moves, and \
-                        around the pointer near it. Needs Screen Recording; macOS shows its \
+                        Warps and colour-splits what's behind the notch while it moves, around \
+                        the pointer near it, and around the notch while it's swollen or open. Needs Screen Recording; macOS shows its \
                         recording indicator while it runs. Without it, a Liquid Glass edge \
                         bends the screen instead (macOS 26).
                         """)

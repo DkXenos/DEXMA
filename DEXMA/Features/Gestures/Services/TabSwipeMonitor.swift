@@ -14,6 +14,10 @@ final class TabSwipeMonitor {
     /// Where the fingers' gesture started (panel coordinates), for `canSwipeTabs`.
     private var startPoint: CGPoint?
 
+    #if DEBUG
+    var debugLog: ((String) -> Void)?
+    #endif
+
     init(panel: NSWindow) {
         self.panel = panel
     }
@@ -45,6 +49,9 @@ final class TabSwipeMonitor {
             guard let point else { return false }
             return target.canSwipeTabs(at: point, direction: direction)
         }
+        #if DEBUG
+        debugLog?("phase \(phase) momentum \(input.isMomentum) dx \(input.dx) dy \(input.dy) point \(point.map { "\($0)" } ?? "nil") → \(output)")
+        #endif
         switch output {
         case .pass:
             return event

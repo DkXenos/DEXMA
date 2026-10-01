@@ -26,12 +26,16 @@ final class AppCoordinator: WindowRouter {
         // Pre-warm: zsh starts now and outlives every open/close.
         let session = ShellSession(size: geometry.contentFrame.size)
         // Pre-warm: the Search card and its web view exist from launch (nothing loads yet).
-        let search = SearchViewModel(session: SearchSession(size: geometry.contentFrame.size))
+        let search = WebTabViewModel(session: WebTab(configuration: .search, size: geometry.contentFrame.size))
+        // Pre-warm: claude.ai loads now, so the Claude tab is instant (and stays signed in: the
+        // website data store is the persistent default, shared with Search).
+        let claude = WebTabViewModel(session: WebTab(configuration: .claude, size: geometry.contentFrame.size))
         let panel = NotchPanel(frame: geometry.panelFrame)
         let pager = ContentPagerView(size: geometry.contentFrame.size, cornerRadius: NotchGeometry.cardRadius)
         let runningDot = RunningDotView(frame: .zero)
-        let notch = NotchViewModel(panel: panel, session: session, search: search, pager: pager,
-                                   runningDot: runningDot, geometry: geometry)
+        let urlField = URLEntryField(frame: .zero)
+        let notch = NotchViewModel(panel: panel, session: session, search: search, claude: claude, pager: pager,
+                                   runningDot: runningDot, urlField: urlField, geometry: geometry)
         notch.geometryForOpening = { [weak self] in self?.geometryProvider.makeGeometry() }
 
         let hostingView = NSHostingView(rootView: NotchContentView(viewModel: notch))
@@ -45,6 +49,7 @@ final class AppCoordinator: WindowRouter {
         hostingView.autoresizingMask = [.width, .height]
         content.addSubview(hostingView)
         content.addSubview(runningDot)  // Over the SwiftUI band.
+        content.addSubview(urlField)
         let bender = ScreenBender(panel: panel, container: content,
                                   geometry: { [weak notch] in notch?.geometry ?? geometry })
         notch.bender = bender
@@ -102,6 +107,7 @@ final class AppCoordinator: WindowRouter {
         notch.animationDuration = settings.animationDuration
         notch.bounce = settings.bounce
         notch.effectIntensity = settings.effectIntensity
+        notch.claude.session.pageZoom = settings.claudeZoom
         bender?.isWarpEnabled = settings.screenWarp
         if let geometry = geometryProvider.makeGeometry() { notch.updateGeometry(geometry) }
 

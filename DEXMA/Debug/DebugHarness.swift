@@ -20,6 +20,8 @@ enum DebugHarness {
             WarpTest.keepCapturing(notch: notch, seconds: Double(seconds) ?? 20)
         } else if let dir = value(after: "-warptest") {
             WarpTest.run(panel: panel, notch: notch, dir: URL(fileURLWithPath: dir))
+        } else if let dir = value(after: "-claudeprobe") {
+            ClaudeProbe.run(panel: panel, notch: notch, dir: URL(fileURLWithPath: dir))
         } else if let dir = value(after: "-swipetest") {
             SwipeTest.run(panel: panel, notch: notch, session: session, dir: URL(fileURLWithPath: dir))
         } else if let dir = value(after: "-bandshot") {

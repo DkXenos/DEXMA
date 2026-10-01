@@ -9,10 +9,11 @@ like a third-party app.
 - **Trigger:** two-finger swipe DOWN starting at the top edge of the trackpad (raw touches
   via OpenMultitouchSupport). The panel follows finger progress 1:1, then settles with a
   velocity-aware spring on release. Global hotkey (default ⌥`) is the fallback.
-- **Open:** the notch morphs into a wide panel with two tabs (segments left of the notch,
-  ⌘1/⌘2): **Terminal** — SwiftTerm `LocalProcessTerminalView` running a persistent zsh,
-  spawned at app launch and never killed when the panel closes — and **Search** — a search
-  field over a `WKWebView` (Google search, or any address), its buttons right of the notch.
+- **Open:** the notch morphs into a wide panel with three tabs (an expanding pill left of the
+  notch, ⌘1/⌘2/⌘3, ⌃Tab, or a two-finger sideways swipe): **Terminal** — SwiftTerm
+  `LocalProcessTerminalView` running a persistent zsh, spawned at app launch and never killed
+  when the panel closes — **Search** — a search field over a `WKWebView` (Google search, or
+  any address) — and **Claude** — claude.ai in a `WKWebView`. See *Tab UI* and *WebTab*.
 - **Close:** swipe up, Esc, or hotkey. Focus returns to the previously active app.
 
 ## Architecture — feature-based MVVM
@@ -64,7 +65,8 @@ Layers — keep them separated:
   `CADisplayLink`.
 - `Geometry/NotchGeometry` — notch rect from `NSScreen` (`auxiliaryTopLeftArea`/
   `auxiliaryTopRightArea`, `safeAreaInsets`); fallback pill for non-notch screens; the
-  panel's window frame, terminal frame, hover zone and `shape(at:)`. `NotchShape` — SwiftUI
+  panel's window frame, the band's regions, the content card, the page dots, the hover zone
+  and `shape(at:)`. `NotchShape` — SwiftUI
   `Shape` with animatable width/height/bottom radius/ear radius. `Interpolation` — `lerp`,
   `smoothstep`.
 - `Settings/` — `AppSettings` (@Observable, UserDefaults, `onChange` after every edit) with
@@ -78,30 +80,38 @@ Layers — keep them separated:
 - `Notch/` — the panel. `NotchViewModel`: single source of truth, `progress` (0 = notch,
   1 = expanded) + `PanelState` (closed/peek/open); hotkey, gesture, hover and the menu bar
   item all drive it; owns the panel window and focus; derives the silhouette, content
-  opacity and hover zone for the view; owns the selected `PanelTab` (Model) and gives each
-  tab the keyboard. Views: `NotchPanel` — borderless non-activating
+  opacity and hover zone for the view; owns the selected `PanelTab` (Model), the tab
+  progress (its own `SpringDriver`), tab swipes (`TabSwipeTarget`) and gives each tab the
+  keyboard. Models: `TabSwitcherLayout`, `PageDotsLayout`, `TerminalContextLayout` (pure band
+  geometry). Views: `NotchPanel` — borderless non-activating
   `NSPanel` above the menu bar; `canJoinAllSpaces` + `fullScreenAuxiliary` + `stationary`;
   transparent; ordered in at launch, never ordered out. `PanelContentView` — the panel's
   flipped content view (warp/glass below, `NSHostingView` above). `NotchContentView` —
-  SwiftUI root, everything from the view model. `NotchBand` — the strip beside the notch:
-  `TabBand` (segments + the droplet selection indicator) left, `SearchActionsBand` right;
-  every control is a `BandButtonStyle`/`BandControl` (white 12 % hover fill, under the
-  liquid lens while hovered/pressed). Clicks go through `NotchViewModel.click` (haptic tick). Services: `NotchGeometryProvider` (screen
+  SwiftUI root, everything from the view model. `NotchChrome` (inside the motion layer):
+  `TabSwitcher`, `BandContext`, `CardDecoration`, `PageDots`; every band control is a
+  `BandButtonStyle`/`BandControl` (white 12 % hover fill, under the liquid lens while
+  hovered/pressed); clicks go through `NotchViewModel.click` (haptic tick).
+  `ContentPagerView`/`ContentPagerHost` — the card's pages side by side (scrolled by its
+  bounds, clipped to the card and the silhouette). AppKit overlays above the SwiftUI band:
+  `RunningDotView` (CA-pulsed), `URLEntryField` (⌘L on Claude). Services: `NotchGeometryProvider` (screen
   choice, size clamp, `-forcePill`), `HoverMonitor` (pointer over the notch → peek),
   `FocusHandoff` (keyboard back to the previous app).
 - `Terminal/` — `ShellSession`: ONE long-lived `LocalProcessTerminalView` + zsh (respawned
-  on exit) and its snapshot cache. Views: `ShellTerminalView` (reports output),
-  `TerminalContainerView` (fixed frame, masked to the shape), `TerminalHost` (the
-  `NSViewRepresentable` that hands that same view to SwiftUI). Never recreated. Model:
-  `TerminalSnapshot` (pixel-exact picture of the live terminal).
-- `Search/` — `SearchSession` (Service): ONE long-lived `SearchCardView` (AppKit field + the
-  `WKWebView`, dark appearance, nothing loaded until the first search), navigation/UI
-  delegates, a scroll script (page at its end → a swipe up may close), and the card's
-  snapshot. `SearchViewModel` (back/forward/loading for the band). `SearchHost` (the
-  `NSViewRepresentable`). Model: `SearchQuery` (text → Google search or address, pure).
+  on exit), its snapshot cache and its `ShellStatus` (working directory via `proc_pidinfo`,
+  running = the PTY's foreground group isn't the shell's). Views: `ShellTerminalView`
+  (reports output), `TerminalContainerView` (the terminal's page, padded). Never recreated.
+  Models: `TerminalSnapshot` (pixel-exact picture of the live terminal), `ShellStatus`,
+  `PathAbbreviation` (`~`, middle truncation; pure).
+- `WebTab/` — the shared web tab (see *WebTab*): `WebTab` (Service), `WebTabView`,
+  `WebPopupController` (sign-in popups), `WebDownloads`, `WebTabViewModel`; Models
+  `WebTabConfiguration` (`.search`, `.claude`), `WebNavigationPolicy`, `CSSColor`.
+- `Search/` — Model: `SearchQuery` (text → Google search or address, pure); the tab itself is
+  `WebTab` with `.search`.
 - `Gestures/` — Models: `GestureRecognizer` (pure, unit-tested), `TouchPoint`,
-  `GestureParameters`, `GestureEvent`. Services: `GestureEngine` (OpenMultitouchSupport
-  frames → recognizer → `SwipeTarget`, i.e. `NotchViewModel`), `ScrollBlocker`/`ScrollGate`
+  `GestureParameters`, `GestureEvent`, `TabSwipeTracker` (pure: axis lock, momentum,
+  release), `GestureTuning`. Services: `GestureEngine` (OpenMultitouchSupport
+  frames → recognizer → `SwipeTarget`, i.e. `NotchViewModel`), `TabSwipeMonitor` (local
+  scroll monitor → tracker → `TabSwipeTarget`), `ScrollBlocker`/`ScrollGate`
   (`CGEventTap` on its own thread swallowing scroll during a swipe), `Haptics`
   (`NSHapticFeedbackManager` ticks).
 - `LiquidMotion/` (only while moving) — Models: `EffectTuning` (every constant +
@@ -113,8 +123,8 @@ Layers — keep them separated:
   hover breath/rest lens, cursor follow, press squash — and the selection indicator's droplet
   slide). Services: `LiquidMotionEngine` (the effect around every motion: snapshot swap,
   per-frame step, idle snapshots, screen bend, and the band's frames),
-  `MotionContent` (protocol the selected tab's content implements: `ShellSession`,
-  `SearchSession` — the engine knows neither). Views: `LiquidMotionLayer` +
+  `MotionContent` (protocol the selected tab's content implements: `ShellSession`, `WebTab`
+  — the engine knows neither). Views: `LiquidMotionLayer` +
   `Shaders/LiquidEffects.metal` (SwiftUI `distortionEffect` stretch and `layerEffect`
   lens/aberration/light over the content snapshot), `ControlLensEffect` (the same file's
   `liquidControlLens` on one band control).
@@ -135,9 +145,62 @@ Layers — keep them separated:
   `OnboardingView`, `OnboardingWindowController`.
 
 **Debug** (DEBUG only) — `DebugHarness` dispatches the launch flags to `SelfTest`
-(`-selftest`), `SnapshotTest` (`-snapshot <dir>`), `EffectTest` (`-effecttest <dir>`) and
-`WarpTest` (`-warptest <dir>`, `-captureidle <s>`); `Support/` holds `DebugImages`,
+(`-selftest`), `SnapshotTest` (`-snapshot <dir>`), `EffectTest` (`-effecttest <dir>`),
+`TabTest` (`-tabtest`), `SwipeTest` (`-swipetest`), `HoverTest` (`-hovertest`, `-bandshot`),
+`ClaudeProbe` (`-claudeprobe`) and `WarpTest` (`-warptest <dir>`, `-captureidle <s>`); `Support/` holds `DebugImages`,
 `FramePacingProbe` and `NotchViewModel.waitForRest()` (see *Debug snapshots*).
+
+## Tab UI (the spec, 2026-10-01, branch `feature/claude-tab`)
+True black (#000000) throughout; the shape, size, notch geometry and open/close are unchanged.
+- **Swiping:** two-finger left/right (`TabSwipeMonitor` → `TabSwipeTracker`): events pass
+  through until 8 pt of travel, then lock to an axis until the fingers lift; horizontal =
+  |dx| > 1.5 |dy|. Works anywhere on the band and the terminal; on web pages only where the
+  page can't scroll further sideways that way (injected JS); WKWebView's own back/forward
+  swipe is off (⌘[ / ⌘] instead). Pages follow the fingers 1:1 (the scroll deltas, so the
+  natural-scrolling setting is respected), rubber-band past the ends (0.3 of the fingers, at
+  most 0.12 of a page), commit past 35 % or above 1.2 pages/s, settle on the tab
+  `SpringDriver` carrying the release speed, interruptible, haptic tick on commit, momentum
+  ignored. Constants: `GestureTuning`. Pages, indicator, dots and the context crossfade all
+  ride `NotchViewModel.tabProgress`.
+- **Band:** 36 pt, padding 14, left and right regions equal, the gap = the notch (or pill).
+- **Tab switcher (left):** container padding 3, radius 10, white 7 %, gap 4. Inactive tabs
+  icon-only 30 × 26 (icon 12 pt, white 55 %); the active one icon + label, height 26,
+  padding 10, spacing 6, label 12.5 pt semibold white, width hugging it. Indicator radius 8,
+  white 17 %, droplet stretch. Widths, reveal (fade + 4 pt slide), indicator and colours
+  interpolate with the progress (`TabSwitcherLayout`). Hover warp on every tab.
+- **Context (right), crossfading:** Terminal — cwd, `~`, middle-truncated, SF Mono 11 white
+  55 %, after a 6 pt green dot pulsing while a foreground command runs. Search — lock (https)
+  + domain (11 pt white 55 %), Reset, Open in browser. Claude — lock + claude.ai, New chat
+  (`square.and.pencil`, "New chat  ⌘⇧R"), Open in browser. Buttons 32 × 28. Never into the gap.
+- **Card:** inset 10 left/right/bottom, top 40, radius 19; 1 px inner stroke white 7 %; 1 px
+  top-edge highlight white 5 %; background #000 (Terminal), the page's own colour (web tabs,
+  JS after load and on theme change), #1C1C1E until known.
+- **Page dots:** in the 10 pt margin below the card, centred; 5 pt, white 25 %, 6 pt apart;
+  the active one 14 × 5, white 85 %; position and width follow the progress (`PageDotsLayout`).
+- **Snapshot rule:** the chrome (band, card stroke, page dots) is inside the motion layer, so
+  the open/close distortion bends it; only the card's content is a picture.
+
+## WebTab
+One component (`Features/WebTab/`), two configurations (`WebTabConfiguration`):
+- Shared: created at launch and never destroyed; one `WKUserContentController` for all its
+  web views (scripts: scroll end/sideways edges, page background colour); Safari's user
+  agent token; the persistent default website data store (shared by both tabs: sign-ins
+  survive restarts); dark appearance; no white flash (a fresh web view shows after its first
+  `didFinish`, the card colour behind it until then); `MotionContent` (the field strip via
+  `cacheDisplay` + WebKit's async `takeSnapshot` of the page, refreshed at idle and when the
+  tab spring settles; with no page picture yet the motion skips the effect, never blank);
+  focus memory; downloads to ~/Downloads (quarantined, Dock stack bounce); popups.
+- `.search`: a search field on top of the card (words → Google, addresses open; ⌘L focuses
+  it), nothing loaded until the first search, every web page stays in the tab (window.open
+  loads in the tab), Reset swaps in a pre-made spare web view (instant, history gone).
+- `.claude`: https://claude.ai/new loaded at launch; claude.ai/anthropic.com and the sign-in
+  hosts (accounts.google.com, accounts.youtube.com, appleid.apple.com) stay in the tab, any
+  other main-frame link opens in the default browser; sign-in popups (Google uses one) open
+  as a real window (`WebPopupController`, with WebKit's configuration so it reports back);
+  focus puts the caret in the message box (`focusComposerScript`, silent if not found);
+  New chat (⌘⇧R) loads /new in the same tab; Open in browser (⌘⇧O) opens the current
+  conversation and closes the panel; ⌘L shows `URLEntryField` over the band to paste a link
+  (e.g. an email sign-in link); page zoom from Settings (`claudeZoom`, default 100 %).
 
 ## Animation model
 - `progress` is always the on-screen (presentation) value. `SpringDriver` steps it each
@@ -250,6 +313,8 @@ Layers — keep them separated:
   (branch `feature/tabs`, from `refactor/mvvm`).
 - [x] 13. Hover warp on the band's controls (same distortion system), press squash, droplet
   selection indicator (branch `feature/tabs`).
+- [x] 14. Tab swiping, tab UI refresh, Claude tab (branch `feature/claude-tab`, from
+  `feature/tabs`; pushed, not merged: the user tests first).
 
 The user asked (2026-10-01) to run phases 2–8 without stopping between them: per phase, read
 package sources, build to 0 errors/0 warnings, launch-check, `git commit -m "Phase N: …"`,
@@ -432,6 +497,20 @@ update Progress below.
   tests. Tab labels now render through the effect's offscreen layer: sub-pixel anti-aliasing
   differences vs Phase 12's capture (invisible), identical before/during-at-zero/after a hover.
 
+- **Phase 14 (swipe, tab UI, Claude):** why swiping "didn't work": it was never built (no scroll
+  monitor; the multitouch recognizer ignores sideways moves; it could also start a close on a
+  sideways swipe drifting up — closing now needs a clearly vertical start). Verified
+  (`-swipetest`): commit by distance and flick, snap back, rubber band ±0.12 exactly, vertical
+  scroll passes through, web-page sideways edge rule, interruption, momentum ignored, the
+  watchdog for a lost fingers-up event. First-time costs (a web view's first appearance, the
+  search field's first focus) moved to launch (`warmUpEffects`). `-claudeprobe`: claude.ai
+  loads (no Cloudflare block); "Continue with Google" opens Google's popup flow
+  (`display=popup`) and Google's sign-in page loads in it ("Sign in to continue to Claude");
+  the email field is found and focusable (not submitted); an image pasted through ⌘V's path
+  reaches the page as a PNG file; the web view accepts PNG and file drags. Unverified (needs
+  the user's account / hardware): Google's password step, email magic link, staying signed in
+  after a restart, real drag of an image.
+
 ## Hardware test checklist (needs the user)
 - Tabs: ⌘1/⌘2/⌘L, clicking segments, focus after reopening (page vs field), Esc on both tabs.
 - Search: a Google search, typing in Google's own fields, IME in the field, link clicks,
@@ -443,7 +522,14 @@ update Progress below.
 - Effect intensity Off (plain hover fill only); Reduce Motion (no warp/squash, instant
   indicator).
 - Terminal typing stays smooth while hovering the band.
-- The open/close effect on both tabs feels as before.
+- The open/close effect on all three tabs feels as before (no blank frames).
+- Swipe on each tab: slow, fast flick, half swipe and release, vertical scroll still works,
+  horizontal scrolling inside web pages; the pill, indicator, dots and context following it.
+- Terminal context: cwd updates after `cd`, the running dot during `sleep 5`.
+- Card stroke/highlight; no seams on the web tabs.
+- Claude: sign-in (Google popup, email + ⌘L link), still signed in after a restart, focus
+  in the message box, New chat, Open in browser, external links in the browser, pasting
+  and dragging an image, page zoom.
 
 ## Debug snapshots
 Screen Recording isn't granted to the CLI, but an app can render its own window. Debug builds
@@ -515,6 +601,11 @@ and never quits (wrap runs in a watchdog).
   from the plain view), so toggle `isEnabled`, don't add/remove the modifier.
 - Synthetic `mouseMoved` events sent to the panel don't drive SwiftUI's
   `onHover`/`onContinuousHover` (they follow the real cursor); clicks do work.
+- A `layerEffect`/`distortionEffect` can't contain AppKit views (NSTextField, representables):
+  the chrome's text field and the pulsing dot are AppKit overlays above the hosting view.
+- Synthetic scroll events need real timestamps (`CGEvent.timestamp`), or every speed is 0.
+- The display turning off pauses `CADisplayLink`: debug runs while the Mac sleeps its display
+  show progress frozen and "0 frames" — not a bug (check `pmset -g log`).
 - A `WKWebView` added to a zero-sized superview with autoresizing grows by the superview's
   whole size when that gets its frame (the page showed 2× and cut off): set its frame outright.
 - `cacheDisplay` over a view containing a `WKWebView` makes WebKit render synchronously

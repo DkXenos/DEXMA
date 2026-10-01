@@ -82,6 +82,14 @@ final class ContentPagerView: NSView {
         updateVisibility()
     }
 
+    /// Launch: every page shown for a moment while the panel is closed (invisible: the mask's
+    /// opacity is 0), so each web view's first appearance (WebKit's first layer tree) happens
+    /// now, not on the first swipe.
+    func prewarm(for duration: TimeInterval) {
+        for page in pages where page.isHidden { page.isHidden = false }
+        DispatchQueue.main.asyncAfter(deadline: .now() + duration) { [weak self] in self?.updateVisibility() }
+    }
+
     private func updateVisibility() {
         for (index, page) in pages.enumerated() {
             let hidden = !isShowingPages || abs(CGFloat(index) - progress) >= 0.999

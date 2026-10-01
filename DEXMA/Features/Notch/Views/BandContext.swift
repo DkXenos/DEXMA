@@ -2,8 +2,9 @@ import SwiftUI
 
 /// Right of the notch: the selected tab's context, crossfading with the tab progress (each
 /// tab's context is fully there on its tab, gone a page away). Terminal: the working directory
-/// (and the running dot, see `RunningDotView`); Search: lock, domain, Reset, Open in browser.
-/// Only the selected tab's buttons take clicks.
+/// (and the running dot, see `RunningDotView`); Search: lock, domain, Reset, Open in browser;
+/// Claude: lock, claude.ai, New chat, Open in browser. Only the selected tab's buttons take
+/// clicks.
 struct BandContext: View {
     let viewModel: NotchViewModel
 
@@ -14,10 +15,14 @@ struct BandContext: View {
             TerminalContext(layout: viewModel.terminalContext,
                             showsDot: viewModel.showsStaticRunningDot)
                 .opacity(reveal(.terminal, progress))
-            SearchContext(search: viewModel.search, band: viewModel.band, region: region,
-                          click: { viewModel.click($0) })
-                .opacity(reveal(.search, progress))
-                .allowsHitTesting(viewModel.tab == .search)
+            ForEach([PanelTab.search, .claude], id: \.self) { tab in
+                if let web = viewModel.webTab(tab) {
+                    WebContext(web: web, band: viewModel.band, region: region, click: { viewModel.click($0) },
+                               openInBrowser: { viewModel.openInBrowserAndClose(web) })
+                        .opacity(reveal(tab, progress))
+                        .allowsHitTesting(viewModel.tab == tab)
+                }
+            }
         }
     }
 
@@ -53,34 +58,43 @@ private struct TerminalContext: View {
     }
 }
 
-/// Lock (over HTTPS) and domain, then Reset and Open in browser, right-aligned in the region.
-private struct SearchContext: View {
+/// Lock (over HTTPS) and domain, then the tab's buttons (Search: Reset, Open in browser;
+/// Claude: New chat, Open in browser), right-aligned in the region.
+private struct WebContext: View {
     static let buttonSize = CGSize(width: 32, height: 28)
 
-    let search: SearchViewModel
+    let web: WebTabViewModel
     let band: BandMotion
     let region: CGRect
     let click: (@escaping () -> Void) -> Void
+    /// Claude's Open in browser also closes the panel (like ⌘⇧O).
+    let openInBrowser: () -> Void
 
     var body: some View {
         HStack(spacing: 0) {
             Spacer(minLength: TerminalContextLayout.notchMargin)
-            if search.isSecure {
+            if web.isSecure {
                 Image(systemName: "lock.fill")
                     .font(.system(size: 9, weight: .semibold))
                     .foregroundStyle(.white.opacity(0.55))
                     .padding(.trailing, 4)
             }
-            Text(search.domain)
+            Text(web.domain)
                 .font(.system(size: 11))
                 .foregroundStyle(.white.opacity(0.55))
                 .lineLimit(1)
                 .truncationMode(.middle)
                 .padding(.trailing, 6)
-            button("search.reset", "arrow.counterclockwise", help: "Reset", enabled: search.hasPage,
-                   action: search.reset)
-            button("search.open", "safari", help: "Open in Browser", enabled: search.hasPage,
-                   action: search.openInBrowser)
+            switch web.kind {
+            case .search:
+                button("search.reset", "arrow.counterclockwise", help: "Reset", enabled: web.hasPage,
+                       action: web.reset)
+                button("search.open", "safari", help: "Open in Browser", enabled: web.hasPage) { web.openInBrowser() }
+            case .claude:
+                button("claude.new", "square.and.pencil", help: "New chat  ⌘⇧R", enabled: true, action: web.newChat)
+                button("claude.open", "safari", help: "Open in Browser  ⌘⇧O", enabled: web.hasPage,
+                       action: openInBrowser)
+            }
         }
         .frame(width: region.width, height: region.height, alignment: .trailing)
         .offset(x: region.minX, y: region.minY)

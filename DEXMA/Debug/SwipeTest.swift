@@ -21,24 +21,44 @@ enum SwipeTest {
             let overTerminal = CGPoint(x: card.midX, y: card.midY)
             let overBand = CGPoint(x: card.minX + 40, y: notch.geometry.bandHeight / 2)
             report("open on the terminal", ok: notch.tab == .terminal && notch.tabProgress == 0, notch)
+            if ProcessInfo.processInfo.environment["DEXMA_SWIPE_LOG"] != nil {
+                notch.debugTabSwipes.debugLog = { print("[swipe]     \($0)") }
+            }
 
-            // Slow drag past the commit fraction (45 % of a page) over the terminal.
-            let probe = FramePacingProbe(driver: notch.debugTabDriver)
-            probe.startSeries()
+            // Slow drag past the commit fraction (45 % of a page) over the terminal, twice (the
+            // first shows a web page for the first time), with frame pacing.
+            for round in 1...2 {
+                if round == 2 {
+                    notch.select(.terminal)
+                    _ = await waitForTabs(notch)
+                    try? await Task.sleep(for: .milliseconds(500))
+                }
+                let probe = FramePacingProbe(driver: notch.debugTabDriver)
+                probe.startSeries()
+                let start = CACurrentMediaTime()
+                await swipe(panel, at: overTerminal, dx: -card.width * 0.45, steps: 40, dt: 0.012)
+                _ = await waitForTabs(notch)
+                report("slow drag 45 % → Search (round \(round))", ok: notch.tab == .search && notch.tabProgress == 1
+                       && session.container.isHidden && !notch.search.session.card.isHidden, notch)
+                let stamps = probe.stamps
+                let intervals = zip(stamps.dropFirst(), stamps).map { ($0 - $1) * 1000 }
+                let late = zip(stamps.dropFirst(), intervals).filter { $0.1 > 12.5 }
+                    .map { String(format: "%.0f ms in: %.1f ms", ($0.0 - start) * 1000, $0.1) }
+                probe.stop()
+                print(String(format: "[swipe] pacing round %d: %d frames, %d late%@; main-thread pass p95 %.2f / max %.2f ms",
+                             round, intervals.count, late.count, late.isEmpty ? "" : " (" + late.joined(separator: ", ") + ")",
+                             FramePacingProbe.percentile(probe.passes, 0.95), probe.passes.max() ?? 0))
+            }
+
+            // A picture of a half swipe (not timed: capturing the window blocks for tens of ms).
+            notch.select(.terminal)
+            _ = await waitForTabs(notch)
             await swipe(panel, at: overTerminal, dx: -card.width * 0.45, steps: 40, dt: 0.012, halfway: {
                 if let image = DebugImages.window(panel) { DebugImages.write(image, dir, "swipe-halfway") }
                 print(String(format: "[swipe]   halfway: tabProgress %.3f, indicator stretch %.3f",
                              notch.tabProgress, notch.band.indicator.stretch))
             })
             _ = await waitForTabs(notch)
-            report("slow drag 45 % → Search", ok: notch.tab == .search && notch.tabProgress == 1
-                   && session.container.isHidden && !notch.search.session.card.isHidden, notch)
-            let intervals = zip(probe.stamps.dropFirst(), probe.stamps).map { ($0 - $1) * 1000 }
-            probe.stop()
-            let period = intervals.min() ?? 8.33
-            print(String(format: "[swipe] pacing (drag + settle): %d frames, %d late (>1.5×), worst %.2f ms; main-thread pass p95 %.2f / max %.2f ms",
-                         intervals.count, intervals.filter { $0 > period * 1.5 }.count, intervals.max() ?? 0,
-                         FramePacingProbe.percentile(probe.passes, 0.95), probe.passes.max() ?? 0))
 
             // A half swipe back that stops before the commit fraction: stays on Search.
             await swipe(panel, at: overBand, dx: card.width * 0.25, steps: 25, dt: 0.012, pauseBeforeLift: 0.15)
@@ -69,7 +89,8 @@ enum SwipeTest {
                           session.terminalView.scrollPosition),
                    ok: notch.tab == .terminal && notch.tabProgress == 0, notch)
 
-            // A web page that scrolls sideways keeps the swipe until its edge.
+            // A web page that scrolls sideways keeps the swipe until its edge (posted events don't
+            // reach WebKit, so the rule is checked where the monitor asks it).
             notch.select(.search)
             _ = await waitForTabs(notch)
             let web = notch.search.session
@@ -80,22 +101,30 @@ enum SwipeTest {
                 """, baseURL: nil)
             try? await Task.sleep(for: .seconds(1.5))
             let overPage = CGPoint(x: card.midX, y: card.maxY - 60)
-            await swipe(panel, at: overPage, dx: -card.width * 0.5, steps: 30, dt: 0.01)
-            try? await Task.sleep(for: .milliseconds(500))
-            let scrolled = try? await web.webView.evaluateJavaScript("window.scrollX") as? Double
-            report(String(format: "sideways-scrolling page: page scrolled to x=%.0f, tabs stay", scrolled ?? -1),
-                   ok: notch.tab == .search && notch.tabProgress == 1 && (scrolled ?? 0) > 0, notch)
+            let middle = notch.canSwipeTabs(at: overPage, direction: 1)
             _ = try? await web.webView.evaluateJavaScript("window.scrollTo(3000, 0)")
             try? await Task.sleep(for: .milliseconds(500))
-            await swipe(panel, at: overPage, dx: -card.width * 0.5, steps: 30, dt: 0.01)
+            let rightEdge = notch.canSwipeTabs(at: overPage, direction: 1)
+            let rightEdgeBack = notch.canSwipeTabs(at: overPage, direction: -1)
+            report("sideways-scrolling page: swipe there scrolls the page (\(middle)); at its right edge a swipe on goes to the next tab (\(rightEdge)), back still scrolls (\(rightEdgeBack))",
+                   ok: !middle && rightEdge && !rightEdgeBack, notch)
+            web.reset()
+            try? await Task.sleep(for: .milliseconds(300))
+
+            // Past the last tab: rubber band, then back.
+            notch.select(.claude)
             _ = await waitForTabs(notch)
-            report("…at its right edge the swipe moves the tabs (rubber band past the last, back)",
-                   ok: notch.tab == .search && notch.tabProgress == 1, notch)
-            _ = try? await web.webView.evaluateJavaScript("window.scrollTo(0, 0)")
-            try? await Task.sleep(for: .milliseconds(500))
-            await swipe(panel, at: overPage, dx: card.width * 0.5, steps: 30, dt: 0.01)
+            var highest: CGFloat = 0
+            await swipe(panel, at: overBand, dx: -card.width * 0.6, steps: 30, dt: 0.01, each: {
+                highest = max(highest, notch.tabProgress)
+            })
             _ = await waitForTabs(notch)
-            report("…and at its left edge a swipe right goes to the Terminal", ok: notch.tab == .terminal, notch)
+            report(String(format: "past the last tab: highest %.3f (limit +%.2f), back to 2", highest,
+                          notch.gestureTuning.rubberBandLimit),
+                   ok: highest > 2 && highest <= 2 + notch.gestureTuning.rubberBandLimit + 0.001
+                   && notch.tab == .claude && notch.tabProgress == 2, notch)
+            notch.select(.terminal)
+            _ = await waitForTabs(notch)
 
             // Interrupt a click-started switch with a swipe the other way.
             notch.select(.search)
@@ -157,6 +186,8 @@ enum SwipeTest {
         event.setDoubleValueField(.scrollWheelEventPointDeltaAxis2, value: Double(dx))
         event.setDoubleValueField(.scrollWheelEventFixedPtDeltaAxis1, value: Double(dy))
         event.setDoubleValueField(.scrollWheelEventFixedPtDeltaAxis2, value: Double(dx))
+        // Real timestamps (the release speed is measured from them).
+        event.timestamp = CGEventTimestamp(clock_gettime_nsec_np(CLOCK_UPTIME_RAW))
         let primaryHeight = NSScreen.screens.first?.frame.maxY ?? 0
         let frame = panel.frame
         event.location = CGPoint(x: frame.minX + point.x, y: primaryHeight - (frame.maxY - point.y))
@@ -168,7 +199,7 @@ enum SwipeTest {
     private static func waitForTabs(_ notch: NotchViewModel) async -> Bool {
         for _ in 0..<300 {
             try? await Task.sleep(for: .milliseconds(10))
-            if !notch.debugTabDriver.isAnimating { return true }
+            if !notch.debugTabDriver.isAnimating, !notch.debugTabDriver.isHeld { return true }
         }
         return false
     }

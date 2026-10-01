@@ -11,6 +11,7 @@ final class AppSettings {
     static let durationRange = 0.25...0.80
     static let bounceRange = 0.0...0.40
     static let effectIntensityRange = 0.0...1.0
+    static let claudeZoomRange = 0.5...1.5
 
     @ObservationIgnored var onChange: (() -> Void)?
     @ObservationIgnored private let defaults = UserDefaults.standard
@@ -32,6 +33,8 @@ final class AppSettings {
     var effectIntensity: Double { didSet { save(effectIntensity, "effectIntensity") } }
     /// Bend the real screen around the notch (needs Screen Recording; Liquid Glass otherwise).
     var screenWarp: Bool { didSet { save(screenWarp, "screenWarp") } }
+    /// The Claude tab's page zoom (1 = 100 %): lower fits more in the panel.
+    var claudeZoom: Double { didSet { save(claudeZoom, "claudeZoom") } }
     var escClosesPanel: Bool { didSet { save(escClosesPanel, "escClosesPanel") } }
     var closesOnFocusLoss: Bool { didSet { save(closesOnFocusLoss, "closesOnFocusLoss") } }
     var hoverToPeek: Bool { didSet { save(hoverToPeek, "hoverToPeek") } }
@@ -58,6 +61,7 @@ final class AppSettings {
         bounce = double("bounce", 0.20, Self.bounceRange)
         effectIntensity = double("effectIntensity", 1, Self.effectIntensityRange)
         screenWarp = bool("screenWarp", true)
+        claudeZoom = double("claudeZoom", 1, Self.claudeZoomRange)
         escClosesPanel = bool("escClosesPanel", true)
         closesOnFocusLoss = bool("closesOnFocusLoss", true)
         hoverToPeek = bool("hoverToPeek", true)

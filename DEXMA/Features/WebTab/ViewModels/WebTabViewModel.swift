@@ -1,25 +1,28 @@
 import Observation
 
-/// The Search tab's state for the band (domain, lock, Reset, Open in browser) and the
-/// shortcuts (back, forward, reload/stop), kept in step with the session's web view.
+/// A web tab's state for the band (domain, lock, its buttons) and the shortcuts (back,
+/// forward, reload/stop, reset, new chat, open in browser), kept in step with its `WebTab`.
 @Observable
-final class SearchViewModel {
+final class WebTabViewModel {
     private(set) var canGoBack = false
     private(set) var canGoForward = false
     private(set) var isLoading = false
-    /// A page is loaded (not the empty state): there is something to reload or open.
+    /// A page is showing (not Search's empty state): there is something to reset or open.
     private(set) var hasPage = false
     /// The page's host (no "www."), and whether it came over HTTPS: the band's context.
     private(set) var domain = ""
     private(set) var isSecure = false
 
-    /// The one Search card, shown in the panel.
-    let session: SearchSession
+    /// The tab's one long-lived card and web view.
+    let session: WebTab
 
-    init(session: SearchSession) {
+    init(session: WebTab) {
         self.session = session
         session.onStateChange = { [weak self] in self?.update() }
+        update()
     }
+
+    var kind: WebTabConfiguration.Kind { session.configuration.kind }
 
     func goBack() {
         session.goBack()
@@ -33,13 +36,20 @@ final class SearchViewModel {
         session.reloadOrStop()
     }
 
-    func openInBrowser() {
-        session.openInBrowser()
-    }
-
-    /// Back to the empty state, history gone.
+    /// Search: back to the empty state, history gone.
     func reset() {
         session.reset()
+    }
+
+    /// Claude: a new conversation in the same tab (the history stays).
+    func newChat() {
+        session.goHome()
+    }
+
+    /// The current page in the default browser. Returns whether there was one.
+    @discardableResult
+    func openInBrowser() -> Bool {
+        session.openInBrowser()
     }
 
     private func update() {

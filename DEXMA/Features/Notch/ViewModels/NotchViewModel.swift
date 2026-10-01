@@ -30,11 +30,15 @@ final class NotchViewModel: SwipeTarget, TabSwipeTarget {
     /// The one terminal, shown in the panel.
     let session: ShellSession
     /// The Search tab: its card and the band's buttons.
-    let search: SearchViewModel
+    let search: WebTabViewModel
+    /// The Claude tab (claude.ai): its card and the band's buttons.
+    let claude: WebTabViewModel
     /// The content card's pages, one per tab.
     let pager: ContentPagerView
     /// The pulsing running dot over the band (at rest; see `showsStaticRunningDot`).
     let runningDot: RunningDotView
+    /// ⌘L on the Claude tab: a field over the band for pasting a link.
+    let urlField: URLEntryField
     @ObservationIgnored var gestureTuning = GestureTuning.standard
     private let panel: NotchPanel
     private let driver: SpringDriver
@@ -43,6 +47,9 @@ final class NotchViewModel: SwipeTarget, TabSwipeTarget {
     private let motion: LiquidMotionEngine
     @ObservationIgnored private var swipeBase: CGFloat = 0
     @ObservationIgnored private var swipeStart = 0
+    @ObservationIgnored private var swipeDelta: CGFloat = 0
+    /// Settles a swipe whose fingers-lifted event never came (so the tabs can't stay half-way).
+    @ObservationIgnored private var swipeWatchdog: DispatchWorkItem?
     private let focus = FocusHandoff()
     @ObservationIgnored private var interactionBase: CGFloat = 0
     /// Where letting go of the swipe would end up (open = true), for the threshold haptic.
@@ -50,13 +57,15 @@ final class NotchViewModel: SwipeTarget, TabSwipeTarget {
     /// The current open/close came from a swipe: tick when it lands.
     @ObservationIgnored private var ticksOnLanding = false
 
-    init(panel: NotchPanel, session: ShellSession, search: SearchViewModel, pager: ContentPagerView,
-         runningDot: RunningDotView, geometry: NotchGeometry) {
+    init(panel: NotchPanel, session: ShellSession, search: WebTabViewModel, claude: WebTabViewModel,
+         pager: ContentPagerView, runningDot: RunningDotView, urlField: URLEntryField, geometry: NotchGeometry) {
         self.panel = panel
         self.session = session
         self.search = search
+        self.claude = claude
         self.pager = pager
         self.runningDot = runningDot
+        self.urlField = urlField
         self.geometry = geometry
         let driver = SpringDriver(window: panel)
         self.driver = driver
@@ -78,18 +87,30 @@ final class NotchViewModel: SwipeTarget, TabSwipeTarget {
             guard let self else { return }
             motion.contentDidChange(self.search.session)
         }
+        claude.session.onChange = { [weak self] in
+            guard let self else { return }
+            motion.contentDidChange(self.claude.session)
+        }
         panel.onInput = { [weak self] type in self?.motion.contentReceived(type) }
         panel.onEscape = { [weak self] in self?.handleEscape() ?? false }
         panel.onCloseShortcut = { [weak self] in self?.close() }
         panel.onResignKey = { [weak self] in self?.panelDidResignKey() }
         panel.onMouseDown = { [weak self] in self?.handleMouseDown() ?? false }
         panel.onCommandKey = { [weak self] key in self?.handleCommandKey(key) ?? false }
+        panel.onShiftCommandKey = { [weak self] key in self?.handleShiftCommandKey(key) ?? false }
+        panel.onCycleTabs = { [weak self] backward in self?.cycleTabs(backward: backward) ?? false }
+        urlField.onSubmit = { [weak self] text in self?.submitURL(text) }
         tabDriver.onChange = { [weak self] value in self?.tabProgressChanged(value) }
         tabDriver.onArrive = { [weak self] _, velocity in self?.band.landIndicator(velocity: velocity) }
+        // Settled on a tab: picture it for the liquid effect now (off the slide).
+        tabDriver.onRest = { [weak self] _ in
+            guard let self else { return }
+            self.motion.contentDidChange(self.selectedContent)
+        }
         tabDriver.onFrame = { [weak self, weak tabDriver] dt in
             self?.band.stepIndicator(dt: dt, velocity: tabDriver?.screenVelocity ?? 0) ?? false
         }
-        pager.setPages([session.container, search.session.card])
+        pager.setPages([session.container, search.session.card, claude.session.card])
         session.onStatusChange = { [weak self] in self?.updateRunningDot() }
         tabSwipes.target = self
         tabSwipes.start()
@@ -187,7 +208,8 @@ final class NotchViewModel: SwipeTarget, TabSwipeTarget {
         if progress != 0 { motion.begin() }
         defer { updateRunningDot() }
         if state != .closed {
-            if state == .open, tab == .search { search.session.rememberFocus(in: panel) }
+            if state == .open, let web = webTab(tab) { web.session.rememberFocus(in: panel) }
+            hideURLField()
             band.releaseAll()
             state = .closed
             // Click-through from the moment it starts closing, not when the animation ends.
@@ -224,11 +246,11 @@ final class NotchViewModel: SwipeTarget, TabSwipeTarget {
     // MARK: Interactive (gesture)
 
     /// A swipe up may close it: the terminal shows its newest output (otherwise the swipe
-    /// scrolls it) and isn't running a full-screen program; the Search page shows its end.
+    /// scrolls it) and isn't running a full-screen program; a web page shows its end.
     var canCloseBySwipe: Bool {
         switch tab {
         case .terminal: session.isScrolledToBottom && !session.isRunningFullScreenProgram
-        case .search: search.session.isScrolledToBottom
+        case .search, .claude: webTab(tab)?.session.isScrolledToBottom ?? true
         }
     }
 
@@ -290,10 +312,12 @@ final class NotchViewModel: SwipeTarget, TabSwipeTarget {
         panel.setFrame(newGeometry.panelFrame, display: true)
         session.resize(to: newGeometry.contentFrame.size)
         search.session.resize(to: newGeometry.contentFrame.size)
+        claude.session.resize(to: newGeometry.contentFrame.size)
         pager.resize(to: newGeometry.contentFrame.size)
         // Resized: the cached snapshots no longer fit.
         motion.contentDidChange(session)
         motion.contentDidChange(search.session)
+        motion.contentDidChange(claude.session)
     }
 
     private func moveToOpeningScreenIfClosed() {
@@ -321,10 +345,16 @@ final class NotchViewModel: SwipeTarget, TabSwipeTarget {
     }
 
     /// Renders the motion layer once at launch (closed, zero effect: it looks exactly like the
-    /// notch) so its shaders are compiled before the first real open.
+    /// notch) so its shaders are compiled before the first real open, and shows every page once
+    /// (invisibly) and gives Search's field the keyboard once, so neither first happens during a
+    /// swipe (each cost a 20–60 ms frame).
     func warmUpEffects() {
         guard state == .closed else { return }
         motion.warmUp()
+        pager.prewarm(for: 0.5)
+        let field = search.session.card.field
+        panel.makeFirstResponder(field)
+        panel.makeFirstResponder(nil)
     }
 
     // MARK: Tabs
@@ -354,8 +384,9 @@ final class NotchViewModel: SwipeTarget, TabSwipeTarget {
     private func commit(_ newTab: PanelTab) {
         guard newTab != tab else { return }
         tab = newTab
+        hideURLField()
         if state == .open { focusSelectedTab() }
-        motion.setContent(newTab == .terminal ? session : search.session)
+        motion.setContent(selectedContent)
     }
 
     private func tabProgressChanged(_ value: CGFloat) {
@@ -412,24 +443,40 @@ final class NotchViewModel: SwipeTarget, TabSwipeTarget {
         switch tab {
         case .terminal: return true
         // Only where the page can't scroll further sideways itself (most pages never can).
-        case .search: return !search.session.canScrollHorizontally(toward: direction)
+        case .search, .claude: return !(webTab(tab)?.session.canScrollHorizontally(toward: direction) ?? false)
         }
     }
 
     func beginTabSwipe() {
         swipeBase = tabProgress
         swipeStart = Int(tabProgress.rounded())
+        swipeDelta = 0
         tabDriver.set(tabProgress)
+        armSwipeWatchdog()
     }
 
     func updateTabSwipe(delta: CGFloat) {
         guard state == .open else { return }
+        swipeDelta = delta
         tabDriver.set(rubberBanded(swipeBase + delta))
+        armSwipeWatchdog()
+    }
+
+    private func armSwipeWatchdog() {
+        swipeWatchdog?.cancel()
+        let item = DispatchWorkItem { [weak self] in
+            guard let self, self.tabDriver.isHeld, self.state == .open else { return }
+            self.endTabSwipe(delta: self.swipeDelta, velocity: 0)
+        }
+        swipeWatchdog = item
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35, execute: item)
     }
 
     /// Past `commitFraction` of a page, or flicked faster than `flickVelocity`, it goes on to
     /// the next tab that way; otherwise back. The spring takes the fingers' speed.
     func endTabSwipe(delta: CGFloat, velocity: CGFloat) {
+        swipeWatchdog?.cancel()
+        swipeWatchdog = nil
         guard state == .open else { return }
         let last = PanelTab.allCases.count - 1
         let raw = swipeBase + delta
@@ -469,22 +516,91 @@ final class NotchViewModel: SwipeTarget, TabSwipeTarget {
     private func focusSelectedTab() {
         switch tab {
         case .terminal: panel.makeFirstResponder(session.terminalView)
-        case .search: search.session.restoreFocus()
+        case .search, .claude: webTab(tab)?.session.restoreFocus()
         }
     }
 
-    /// ⌘1/⌘2 pick a tab, ⌘L goes to the search field; ⌘[ ⌘] ⌘R browse on the Search tab.
+    /// What the liquid effect pictures: the selected tab's content.
+    private var selectedContent: MotionContent {
+        webTab(tab)?.session ?? session
+    }
+
+    /// The web tab's view model for `tab` (nil for the terminal).
+    func webTab(_ tab: PanelTab) -> WebTabViewModel? {
+        switch tab {
+        case .terminal: nil
+        case .search: search
+        case .claude: claude
+        }
+    }
+
+    /// ⌃Tab / ⌃⇧Tab: the next / previous tab, round the end.
+    private func cycleTabs(backward: Bool) -> Bool {
+        guard state == .open else { return false }
+        let all = PanelTab.allCases
+        let next = (index(of: tab) + (backward ? all.count - 1 : 1)) % all.count
+        select(all[next])
+        return true
+    }
+
+    /// ⌘⇧R: a new Claude chat. ⌘⇧O: the current page in the default browser, then close.
+    private func handleShiftCommandKey(_ key: String) -> Bool {
+        guard state == .open else { return false }
+        switch key {
+        case "r" where tab == .claude:
+            claude.newChat()
+        case "o":
+            guard let web = webTab(tab) else { return false }
+            openInBrowserAndClose(web)
+        default:
+            return false
+        }
+        return true
+    }
+
+    /// Opens the tab's page in the default browser and gets out of the way.
+    func openInBrowserAndClose(_ web: WebTabViewModel) {
+        guard web.openInBrowser() else { return }
+        close()
+    }
+
+    // MARK: ⌘L URL field (Claude)
+
+    private func showURLField() {
+        let region = geometry.actionBandFrame
+        let frame = CGRect(x: region.minX + TerminalContextLayout.notchMargin, y: region.midY - 12,
+                           width: max(region.width - TerminalContextLayout.notchMargin, 0), height: 24)
+        urlField.show(at: frame)
+    }
+
+    private func hideURLField() {
+        guard !urlField.isHidden else { return }
+        urlField.hide()
+    }
+
+    private func submitURL(_ text: String) {
+        hideURLField()
+        guard let web = webTab(tab) else { return }
+        web.session.load(text)
+        web.session.restoreFocus()
+    }
+
+    /// ⌘1/⌘2/⌘3 pick a tab; ⌘L goes to Search's field, or on Claude opens the URL field;
+    /// ⌘[ ⌘] ⌘R browse on the web tabs.
     private func handleCommandKey(_ key: String) -> Bool {
         guard state == .open else { return false }
         switch key {
         case "1": select(.terminal)
         case "2": select(.search)
+        case "3": select(.claude)
+        case "l" where tab == .claude:
+            showURLField()
         case "l":
             select(.search)
             search.session.focusField()
-        case "[" where tab == .search: search.goBack()
-        case "]" where tab == .search: search.goForward()
-        case "r" where tab == .search: search.reloadOrStop()
+        case "[" where tab != .terminal: webTab(tab)?.goBack()
+        case "]" where tab != .terminal: webTab(tab)?.goForward()
+        case "r" where tab != .terminal: webTab(tab)?.reloadOrStop()
         default: return false
         }
         return true
@@ -505,6 +621,12 @@ final class NotchViewModel: SwipeTarget, TabSwipeTarget {
 
     private func handleEscape() -> Bool {
         // vim, less, htop… need Esc themselves.
+        // Esc first puts the ⌘L field away.
+        if !urlField.isHidden {
+            hideURLField()
+            focusSelectedTab()
+            return true
+        }
         guard state == .open, escClosesPanel,
               !(tab == .terminal && session.isRunningFullScreenProgram) else {
             return false
@@ -546,5 +668,7 @@ final class NotchViewModel: SwipeTarget, TabSwipeTarget {
 
     var debugDriver: SpringDriver { driver }
     var debugTabDriver: SpringDriver { tabDriver }
+    var debugTabSwipes: TabSwipeMonitor { tabSwipes }
+    func debugEscape() -> Bool { handleEscape() }
     #endif
 }
