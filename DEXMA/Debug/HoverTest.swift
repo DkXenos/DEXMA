@@ -103,7 +103,7 @@ enum HoverTest {
             report(String(format: "click → Search; indicator stretch max %.3f, min %.3f; at rest %@",
                           stretches.max() ?? 0, stretches.min() ?? 0, "\(indicator)"),
                    ok: notch.tab == .search && (stretches.max() ?? 0) > 0.03
-                   && indicator == BandMotion.Indicator(position: 1, stretch: 0), lens)
+                   && indicator == BandMotion.Indicator() && notch.tabProgress == 1, lens)
             lens.hover(at: nil)
             try? await Task.sleep(for: .milliseconds(600))
             report("after the click, at rest", ok: !lens.isActive, lens)
@@ -127,7 +127,7 @@ enum HoverTest {
             // Reduce Motion: instant indicator, no lens, no squash.
             notch.band.reduceMotion = { true }
             notch.select(.search)
-            report("Reduce Motion → indicator jumps", ok: notch.band.indicator == BandMotion.Indicator(position: 1, stretch: 0), lens)
+            report("Reduce Motion → indicator jumps", ok: notch.band.indicator == BandMotion.Indicator() && notch.tabProgress == 1, lens)
             lens.hover(at: CGPoint(x: search.width / 2, y: search.height / 2))
             try? await Task.sleep(for: .milliseconds(200))
             click(panel, at: CGPoint(x: search.midX, y: search.midY), down: true)

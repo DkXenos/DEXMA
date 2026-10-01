@@ -28,7 +28,9 @@ final class AppCoordinator: WindowRouter {
         // Pre-warm: the Search card and its web view exist from launch (nothing loads yet).
         let search = SearchViewModel(session: SearchSession(size: geometry.contentFrame.size))
         let panel = NotchPanel(frame: geometry.panelFrame)
-        let notch = NotchViewModel(panel: panel, session: session, search: search, geometry: geometry)
+        let pager = ContentPagerView(size: geometry.contentFrame.size, cornerRadius: SearchCardView.pageRadius)
+        let notch = NotchViewModel(panel: panel, session: session, search: search, pager: pager,
+                                   geometry: geometry)
         notch.geometryForOpening = { [weak self] in self?.geometryProvider.makeGeometry() }
 
         let hostingView = NSHostingView(rootView: NotchContentView(viewModel: notch))

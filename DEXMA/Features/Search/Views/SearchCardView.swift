@@ -2,8 +2,8 @@ import AppKit
 import WebKit
 
 /// The Search tab's card: a search field across the top and the web page below it, at the
-/// content frame's fixed size. Like the terminal's container it is clipped to the notch
-/// silhouette with a layer mask, so opening and closing never resize or re-lay-out anything.
+/// content frame's fixed size: the Search tab's page in the content pager (which clips it to
+/// the card and the notch silhouette), so opening, closing and swiping never resize anything.
 ///
 /// The field's background, its icon and the empty state are drawn in `draw(_:)` (not as layer
 /// properties), so `cacheDisplay` pictures them exactly for the motion layer; only the page
@@ -17,13 +17,11 @@ final class SearchCardView: NSView {
     let webView: WKWebView
     /// Rounds the page's corners. Hidden until the first search: the empty state shows instead.
     private let pageClip = NSView()
-    private let maskLayer = CAShapeLayer()
 
     init(size: CGSize, webView: WKWebView) {
         self.webView = webView
         super.init(frame: CGRect(origin: .zero, size: size))
         wantsLayer = true
-        layer?.mask = maskLayer
         // Dark controls, caret and page (Google follows prefers-color-scheme) on the black panel.
         appearance = NSAppearance(named: .darkAqua)
 
@@ -69,17 +67,6 @@ final class SearchCardView: NSView {
     override func setFrameSize(_ newSize: NSSize) {
         super.setFrameSize(newSize)
         layoutCard()
-    }
-
-    /// Clips to `shape`, laid out in panel coordinates (top-left origin); this view's top-left
-    /// corner sits at `origin` there. Called from SwiftUI's update pass: layers only.
-    func update(mask shape: NotchShape, panelSize: CGSize, origin: CGPoint, opacity: CGFloat) {
-        CATransaction.begin()
-        CATransaction.setDisableActions(true)
-        maskLayer.frame = bounds
-        maskLayer.path = shape.maskPath(panelSize: panelSize, origin: origin, viewHeight: bounds.height)
-        maskLayer.opacity = Float(opacity)
-        CATransaction.commit()
     }
 
     /// A picture of the card as on screen, with `page` (WebKit's own picture of the web view,

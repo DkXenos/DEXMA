@@ -85,6 +85,13 @@ struct GestureRecognizerTests {
         #expect(recognizer.isCapturing)
     }
 
+    @Test mutating func sidewaysTabSwipeDriftingUpDoesNotStartClosing() {
+        // Mostly sideways (a tab swipe), drifting up a little: never a close.
+        let events = swipe(from: (0.3, 0.5), to: (0.7, 0.56), panelOpen: true)
+        #expect(events.isEmpty)
+        #expect(!recognizer.isCapturing)
+    }
+
     @Test mutating func upSwipeIgnoredWhenTerminalCanStillScroll() {
         let events = swipe(from: (0.5, 0.3), to: (0.5, 0.6), panelOpen: true, canClose: false)
         #expect(events.isEmpty)

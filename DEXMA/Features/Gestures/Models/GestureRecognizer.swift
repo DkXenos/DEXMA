@@ -84,7 +84,9 @@ nonisolated struct GestureRecognizer {
                 phase = .ignoring
             } else if along < -Self.wrongWayTravel {
                 phase = .ignoring
-            } else if along > Self.startTravel {
+            } else if along > Self.startTravel, mode == .open || along > 1.5 * sideways {
+                // Closing (fingers up) must be clearly vertical: a sideways tab swipe that drifts
+                // up a little mustn't start closing the panel.
                 phase = .tracking(mode)
                 lastDelta = 0
                 lastTime = time

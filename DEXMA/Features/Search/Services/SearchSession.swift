@@ -8,13 +8,18 @@ final class SearchSession: NSObject, MotionContent, WKNavigationDelegate, WKUIDe
                            WKScriptMessageHandler, NSTextFieldDelegate {
     private static let scrollMessage = "dexmaScroll"
     /// Reports whether the page is scrolled to its end, so a swipe up there can close the panel
-    /// (as at the terminal's newest output) instead of scrolling.
+    /// (as at the terminal's newest output) instead of scrolling, and whether it can still
+    /// scroll sideways either way, so a sideways swipe there scrolls it rather than the tabs.
     private static let scrollScript = """
         (function () {
           function post() {
             var page = document.scrollingElement || document.documentElement;
-            window.webkit.messageHandlers.\(scrollMessage).postMessage(
-              Math.ceil(window.innerHeight + window.scrollY) >= page.scrollHeight - 2);
+            var x = window.scrollX, maxX = page.scrollWidth - window.innerWidth;
+            window.webkit.messageHandlers.\(scrollMessage).postMessage({
+              bottom: Math.ceil(window.innerHeight + window.scrollY) >= page.scrollHeight - 2,
+              left: x > 1,
+              right: x < maxX - 1
+            });
           }
           addEventListener('scroll', post, { passive: true });
           addEventListener('resize', post);
@@ -36,6 +41,8 @@ final class SearchSession: NSObject, MotionContent, WKNavigationDelegate, WKUIDe
     }
 
     private var pageAtBottom = true
+    private var pageCanScrollLeft = false
+    private var pageCanScrollRight = false
     private var cachedSnapshot: ContentSnapshot?
     /// WebKit's latest picture of the page, and whether the page changed since.
     private var pageImage: CGImage?
@@ -106,6 +113,13 @@ final class SearchSession: NSObject, MotionContent, WKNavigationDelegate, WKUIDe
         webView.load(URLRequest(url: target.url))
         card.window?.makeFirstResponder(webView)
         onChange?()
+    }
+
+    /// Whether the page itself can scroll further sideways toward `direction` (+1: content moving
+    /// left, i.e. toward its right edge; −1 the other way). No page: no.
+    func canScrollHorizontally(toward direction: Int) -> Bool {
+        guard card.showsPage else { return false }
+        return direction > 0 ? pageCanScrollRight : pageCanScrollLeft
     }
 
     var canGoBack: Bool { webView.canGoBack }
@@ -204,6 +218,8 @@ final class SearchSession: NSObject, MotionContent, WKNavigationDelegate, WKUIDe
 
     func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
         pageAtBottom = false  // A new page starts at its top; the script reports soon.
+        pageCanScrollLeft = false
+        pageCanScrollRight = false
         if !fieldEdited, let url = webView.url, ["http", "https"].contains(url.scheme ?? "") {
             card.field.stringValue = SearchQuery.displayText(for: url)
         }
@@ -251,8 +267,10 @@ final class SearchSession: NSObject, MotionContent, WKNavigationDelegate, WKUIDe
 
     func userContentController(_ userContentController: WKUserContentController,
                                didReceive message: WKScriptMessage) {
-        guard message.name == Self.scrollMessage, let atBottom = message.body as? Bool else { return }
-        pageAtBottom = atBottom
+        guard message.name == Self.scrollMessage, let state = message.body as? [String: Any] else { return }
+        pageAtBottom = state["bottom"] as? Bool ?? pageAtBottom
+        pageCanScrollLeft = state["left"] as? Bool ?? false
+        pageCanScrollRight = state["right"] as? Bool ?? false
         onChange?()  // Scrolled (also by keyboard or script): the page's picture is stale.
     }
 }

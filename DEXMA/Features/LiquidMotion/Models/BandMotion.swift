@@ -3,14 +3,14 @@ import Observation
 import SwiftUI
 
 /// The liquid model for the band beside the notch: the lens on each control (`ControlLens`)
-/// and the tab selection indicator, which slides like a droplet, stretched along its motion by
-/// the same jelly spring as the notch and squashed as it lands. Stepped on the panel's display
-/// link by `LiquidMotionEngine`; exactly zero (and frame-free) at rest.
+/// and the tab selection indicator's droplet stretch — along its motion, by the same jelly
+/// spring as the notch, squashed as it lands. The indicator's position is the panel's tab
+/// progress (its own spring, see `NotchViewModel`); this only reads that spring's speed. Lenses
+/// step on the panel's display link (`LiquidMotionEngine`), the stretch on the tab spring's;
+/// both are exactly zero (and frame-free) at rest.
 @Observable
 final class BandMotion {
     struct Indicator: Equatable {
-        /// Where the indicator is, in segments (0 = first tab).
-        var position: CGFloat = 0
         /// + longer along the motion and thinner, − shorter and taller (landing).
         var stretch: CGFloat = 0
 
@@ -32,14 +32,7 @@ final class BandMotion {
     @ObservationIgnored var wake: (() -> Void)?
 
     @ObservationIgnored private var lenses: [String: ControlLens] = [:]
-    @ObservationIgnored private var target: CGFloat = 0
-    @ObservationIgnored private var velocity: CGFloat = 0
-    @ObservationIgnored private var sliding = false
-    @ObservationIgnored private var landed = true
     @ObservationIgnored private var jelly = JellySpring()
-    /// Bouncy enough to land at speed and overshoot a hair, like a drop (and to give the
-    /// landing kick something to work with).
-    private let spring = Spring(duration: 0.4, bounce: 0.25)
 
     /// The liquid controls are on: not with Reduce Motion or the intensity at Off.
     var isEnabled: Bool {
@@ -57,67 +50,39 @@ final class BandMotion {
         return lens
     }
 
-    /// The selected tab is now the `index`th: the indicator slides there (jumps with Reduce
-    /// Motion).
-    func select(_ index: Int) {
-        let newTarget = CGFloat(index)
-        guard newTarget != target else { return }
-        target = newTarget
-        if reduceMotion() {
-            indicator = Indicator(position: newTarget)
-            velocity = 0
-            sliding = false
-            jelly.reset()
-            return
-        }
-        sliding = true
-        landed = false
-        wake?()
-    }
-
     /// The panel is closing: every lens lets go.
     func releaseAll() {
         for lens in lenses.values { lens.release() }
     }
 
-    /// One display frame. Returns true while anything still moves.
+    /// One display frame of the panel's link (the lenses). True while any still moves.
     func step(dt: Double) -> Bool {
         var busy = false
         for lens in lenses.values where lens.isActive {
             if lens.step(dt: dt) { busy = true }
         }
-        if sliding || !jelly.isAtRest {
-            if stepIndicator(dt: dt) { busy = true }
-        }
         return busy
     }
 
-    private func stepIndicator(dt: Double) -> Bool {
+    /// One frame of the tab spring, moving at `velocity` (tabs per second): the stretch chases
+    /// a stretch proportional to the speed. True while it still moves.
+    func stepIndicator(dt: Double, velocity: CGFloat) -> Bool {
         let t = tuning
-        var next = indicator
-        if sliding {
-            let before = next.position - target
-            spring.update(value: &next.position, velocity: &velocity, target: target, deltaTime: dt)
-            if !landed, before * (next.position - target) <= 0 {
-                landed = true
-                // The landing squash, kicked like the notch's: the same ratio of kick to stretch.
-                if t.stretchPerVelocity > 0 {
-                    jelly.velocity -= t.wobble / t.stretchPerVelocity * t.indicatorStretch
-                        * abs(velocity) * 2 * .pi * t.jellyFrequency
-                }
-            }
-            // 0.0005 of a segment is well under a point: snap and stop.
-            if abs(next.position - target) < 0.0005, abs(velocity) < 0.01 {
-                next.position = target
-                velocity = 0
-                sliding = false
-            }
-        }
-        let stretchTarget = sliding ? min(t.indicatorStretch * abs(velocity), t.indicatorMaxStretch) : 0
-        jelly.step(dt: dt, target: stretchTarget, frequency: t.jellyFrequency, damping: t.jellyDamping,
+        let target = reduceMotion() ? 0 : min(t.indicatorStretch * abs(velocity), t.indicatorMaxStretch)
+        guard target != 0 || !jelly.isAtRest else { return false }
+        jelly.step(dt: dt, target: target, frequency: t.jellyFrequency, damping: t.jellyDamping,
                    limit: t.indicatorMaxStretch)
-        next.stretch = jelly.value
+        let next = Indicator(stretch: jelly.value)
         if next != indicator { indicator = next }
-        return sliding || !jelly.isAtRest
+        return !jelly.isAtRest
+    }
+
+    /// The indicator reached its tab at `velocity` (tabs per second): a squash, kicked like the
+    /// notch's landing (the same ratio of kick to stretch).
+    func landIndicator(velocity: CGFloat) {
+        let t = tuning
+        guard t.stretchPerVelocity > 0, !reduceMotion() else { return }
+        jelly.velocity -= t.wobble / t.stretchPerVelocity * t.indicatorStretch
+            * abs(velocity) * 2 * .pi * t.jellyFrequency
     }
 }

@@ -71,26 +71,35 @@ struct BandMotionTests {
         #expect(!lens.isActive && lens.frame.pressScale(band.tuning) == CGSize(width: 1, height: 1))
     }
 
-    @Test func indicatorStretchesLikeADropletAndRestsAtExactlyOneByOne() {
+    @Test func indicatorStretchesWithTheTabSpringsSpeedAndRestsAtExactlyOneByOne() {
         let band = makeBand()
-        band.select(1)
+        // A tab switch: speed up to ~7 tabs/s, land, stop.
         var maxStretch: CGFloat = 0
         var minStretch: CGFloat = 0
-        run(band, seconds: 3) { _ in
+        var t = 0.0
+        var landed = false
+        while t < 3 {
+            let speed: CGFloat = t < 0.25 ? 7 * sin(.pi * CGFloat(t) / 0.25) : 0
+            if t >= 0.2, !landed {
+                landed = true
+                band.landIndicator(velocity: 1.2)
+            }
+            let busy = band.stepIndicator(dt: 1.0 / 120, velocity: speed)
             maxStretch = max(maxStretch, band.indicator.stretch)
             minStretch = min(minStretch, band.indicator.stretch)
+            t += 1.0 / 120
+            if !busy, t > 0.3 { break }
         }
         #expect(maxStretch > 0.05)  // Longer while it slides…
         #expect(minStretch < -0.004)  // …squashed as it lands…
-        #expect(band.indicator == BandMotion.Indicator(position: 1, stretch: 0))  // …then exact.
+        #expect(band.indicator == BandMotion.Indicator())  // …then exact.
         #expect(band.indicator.scale == CGSize(width: 1, height: 1))
     }
 
-    @Test func reduceMotionJumpsAndOffKeepsOnlyThePlainControl() {
+    @Test func reduceMotionAndOffKeepOnlyThePlainControls() {
         let calm = makeBand(reduceMotion: true)
-        calm.select(1)
-        #expect(calm.indicator == BandMotion.Indicator(position: 1, stretch: 0))
-        #expect(!calm.step(dt: 1.0 / 120))
+        #expect(!calm.stepIndicator(dt: 1.0 / 120, velocity: 6))
+        #expect(calm.indicator == BandMotion.Indicator())
         let lens = calm.lens(for: "tab.search")
         lens.hover(at: CGPoint(x: 5, y: 5))
         lens.setPressed(true)
@@ -100,9 +109,7 @@ struct BandMotionTests {
         let offLens = off.lens(for: "tab.search")
         offLens.hover(at: CGPoint(x: 5, y: 5))
         #expect(!offLens.isActive)
-        off.select(1)  // Still slides (no Reduce Motion), but never stretches.
-        var stretched = false
-        run(off, seconds: 3) { _ in stretched = stretched || off.indicator.stretch != 0 }
-        #expect(!stretched && off.indicator.position == 1)
+        _ = off.stepIndicator(dt: 1.0 / 120, velocity: 6)
+        #expect(off.indicator.stretch == 0)  // Slides (the tab spring), never stretches.
     }
 }

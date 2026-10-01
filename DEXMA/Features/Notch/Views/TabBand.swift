@@ -10,6 +10,8 @@ struct TabBand: View {
     static let spacing: CGFloat = 4
 
     let selected: PanelTab
+    /// The panel's tab progress: where the indicator is (fractional mid-swipe).
+    let progress: CGFloat
     let band: BandMotion
     let size: CGSize
     let select: (PanelTab) -> Void
@@ -20,13 +22,14 @@ struct TabBand: View {
             + CGFloat(tabs.count - 1) * Self.spacing
         let segment = CGSize(width: labelled ? Self.labelledWidth : Self.iconWidth, height: Self.segmentHeight)
         let indicator = band.indicator
+        let position = min(max(progress, 0), CGFloat(tabs.count - 1))
 
         ZStack(alignment: .leading) {
             Capsule()
                 .fill(.white.opacity(0.2))
                 .frame(width: segment.width, height: segment.height)
                 .scaleEffect(x: indicator.scale.width, y: indicator.scale.height)
-                .offset(x: indicator.position * (segment.width + Self.spacing))
+                .offset(x: position * (segment.width + Self.spacing))
             HStack(spacing: Self.spacing) {
                 ForEach(tabs, id: \.self) { tab in
                     Button { select(tab) } label: {

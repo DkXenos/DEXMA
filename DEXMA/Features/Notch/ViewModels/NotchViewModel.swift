@@ -5,14 +5,18 @@ import SwiftUI
 /// Single source of truth for the panel: `progress` (0 = notch, 1 = expanded) and state.
 /// The hotkey, the gesture, the pointer and the menu bar item all drive it; views only read it.
 @Observable
-final class NotchViewModel: SwipeTarget {
+final class NotchViewModel: SwipeTarget, TabSwipeTarget {
     static let peekProgress: CGFloat = 0.06
 
     private(set) var progress: CGFloat = 0
     private(set) var state: PanelState = .closed
     private(set) var geometry: NotchGeometry
-    /// The tab on show (terminal or Search); the other one's view is hidden.
+    /// The selected tab: it has the keyboard and the liquid effect pictures it.
     private(set) var tab: PanelTab = .terminal
+    /// Where the pages, the selection indicator and the band's crossfade are: 0 = first tab;
+    /// fractional during a swipe or a switch (its own spring), a little past either end while
+    /// rubber-banding.
+    private(set) var tabProgress: CGFloat = 0
 
     @ObservationIgnored var escClosesPanel = true
     @ObservationIgnored var closesOnFocusLoss = true
@@ -27,9 +31,16 @@ final class NotchViewModel: SwipeTarget {
     let session: ShellSession
     /// The Search tab: its card and the band's buttons.
     let search: SearchViewModel
+    /// The content card's pages, one per tab.
+    let pager: ContentPagerView
+    @ObservationIgnored var gestureTuning = GestureTuning.standard
     private let panel: NotchPanel
     private let driver: SpringDriver
+    private let tabDriver: SpringDriver
+    private let tabSwipes: TabSwipeMonitor
     private let motion: LiquidMotionEngine
+    @ObservationIgnored private var swipeBase: CGFloat = 0
+    @ObservationIgnored private var swipeStart = 0
     private let focus = FocusHandoff()
     @ObservationIgnored private var interactionBase: CGFloat = 0
     /// Where letting go of the swipe would end up (open = true), for the threshold haptic.
@@ -37,13 +48,19 @@ final class NotchViewModel: SwipeTarget {
     /// The current open/close came from a swipe: tick when it lands.
     @ObservationIgnored private var ticksOnLanding = false
 
-    init(panel: NotchPanel, session: ShellSession, search: SearchViewModel, geometry: NotchGeometry) {
+    init(panel: NotchPanel, session: ShellSession, search: SearchViewModel, pager: ContentPagerView,
+         geometry: NotchGeometry) {
         self.panel = panel
         self.session = session
         self.search = search
+        self.pager = pager
         self.geometry = geometry
         let driver = SpringDriver(window: panel)
         self.driver = driver
+        let tabDriver = SpringDriver(window: panel)
+        tabDriver.runsWhileHeld = true  // The indicator's stretch follows the fingers too.
+        self.tabDriver = tabDriver
+        tabSwipes = TabSwipeMonitor(panel: panel)
         motion = LiquidMotionEngine(content: session, driver: driver)
         motion.peekProgress = Self.peekProgress
         driver.onChange = { [weak self] value in self?.progress = value }
@@ -64,6 +81,14 @@ final class NotchViewModel: SwipeTarget {
         panel.onResignKey = { [weak self] in self?.panelDidResignKey() }
         panel.onMouseDown = { [weak self] in self?.handleMouseDown() ?? false }
         panel.onCommandKey = { [weak self] key in self?.handleCommandKey(key) ?? false }
+        tabDriver.onChange = { [weak self] value in self?.tabProgressChanged(value) }
+        tabDriver.onArrive = { [weak self] _, velocity in self?.band.landIndicator(velocity: velocity) }
+        tabDriver.onFrame = { [weak self, weak tabDriver] dt in
+            self?.band.stepIndicator(dt: dt, velocity: tabDriver?.screenVelocity ?? 0) ?? false
+        }
+        pager.setPages([session.container, search.session.card])
+        tabSwipes.target = self
+        tabSwipes.start()
     }
 
     // MARK: Liquid effect settings
@@ -139,7 +164,7 @@ final class NotchViewModel: SwipeTarget {
             // Key without activating DEXMA: the frontmost app keeps its menu bar, and
             // typing goes straight to the selected tab.
             panel.allowsKey = true
-            selectedView.isHidden = false
+            pager.isShowingPages = true
             panel.makeKey()
             focusSelectedTab()
             // After focusing, so a fresh snapshot shows the caret the live view will have.
@@ -153,6 +178,7 @@ final class NotchViewModel: SwipeTarget {
 
     func close(initialVelocity: CGFloat? = nil, fromGesture: Bool = false) {
         // Before focus leaves: the snapshot must match the frame on screen right now.
+        settleTabsNow()
         if progress != 0 { motion.begin() }
         if state != .closed {
             if state == .open, tab == .search { search.session.rememberFocus(in: panel) }
@@ -210,7 +236,7 @@ final class NotchViewModel: SwipeTarget {
         let fromClosed = state != .open && progress <= Self.peekProgress + 0.01
         if state != .open { moveToOpeningScreenIfClosed() }
         interactionBase = progress
-        selectedView.isHidden = false
+        pager.isShowingPages = true
         if motion.begin(), fromClosed {
             effects.anticipate()
         }
@@ -258,6 +284,7 @@ final class NotchViewModel: SwipeTarget {
         panel.setFrame(newGeometry.panelFrame, display: true)
         session.resize(to: newGeometry.contentFrame.size)
         search.session.resize(to: newGeometry.contentFrame.size)
+        pager.resize(to: newGeometry.contentFrame.size)
         // Resized: the cached snapshots no longer fit.
         motion.contentDidChange(session)
         motion.contentDidChange(search.session)
@@ -293,31 +320,113 @@ final class NotchViewModel: SwipeTarget {
 
     // MARK: Tabs
 
-    /// Shows `newTab`'s content (and its band buttons) and gives it the keyboard if open.
+    private var tabSpring: Spring {
+        reduceMotion ? Spring(duration: 0.2, bounce: 0) : Spring(duration: 0.4, bounce: 0.15)
+    }
+
+    private func index(of tab: PanelTab) -> Int {
+        PanelTab.allCases.firstIndex(of: tab) ?? 0
+    }
+
+    /// Shows `newTab` (clicked, or ⌘-number): the pages, indicator and band slide there on the
+    /// tab spring (jump with Reduce Motion) and it gets the keyboard if open.
     func select(_ newTab: PanelTab) {
+        commit(newTab)
+        let target = CGFloat(index(of: newTab))
+        if reduceMotion || state != .open {
+            tabDriver.set(target)
+        } else {
+            tabDriver.animate(to: target, with: tabSpring)
+        }
+    }
+
+    /// `newTab` becomes the selected tab: keyboard and liquid effect. Its page is already on
+    /// the card or sliding in; the old one hides once it has slid off (`ContentPagerView`).
+    private func commit(_ newTab: PanelTab) {
         guard newTab != tab else { return }
-        let old = selectedView
         tab = newTab
-        band.select(PanelTab.allCases.firstIndex(of: newTab) ?? 0)
-        if progress > 0 || state != .closed { selectedView.isHidden = false }
         if state == .open { focusSelectedTab() }
-        // After focus moved: hiding the first responder would send it elsewhere.
-        old.isHidden = true
         motion.setContent(newTab == .terminal ? session : search.session)
+    }
+
+    private func tabProgressChanged(_ value: CGFloat) {
+        tabProgress = value
+        pager.setProgress(value)
+    }
+
+    /// Before closing: no half-swiped pages; the selected tab snaps into place (the liquid
+    /// effect pictures it alone).
+    private func settleTabsNow() {
+        let target = CGFloat(index(of: tab))
+        if tabProgress != target || tabDriver.isAnimating { tabDriver.set(target) }
+    }
+
+    // MARK: TabSwipeTarget
+
+    var acceptsTabSwipes: Bool { state == .open }
+
+    var tabPageWidth: CGFloat { geometry.contentFrame.width }
+
+    func canSwipeTabs(at point: CGPoint, direction: Int) -> Bool {
+        let body = geometry.shape(at: 1)
+        let band = CGRect(x: body.centerX - body.width / 2, y: 0, width: body.width, height: geometry.bandHeight)
+        if band.contains(point) { return true }
+        guard geometry.contentFrame.contains(point) else { return false }
+        switch tab {
+        case .terminal: return true
+        // Only where the page can't scroll further sideways itself (most pages never can).
+        case .search: return !search.session.canScrollHorizontally(toward: direction)
+        }
+    }
+
+    func beginTabSwipe() {
+        swipeBase = tabProgress
+        swipeStart = Int(tabProgress.rounded())
+        tabDriver.set(tabProgress)
+    }
+
+    func updateTabSwipe(delta: CGFloat) {
+        guard state == .open else { return }
+        tabDriver.set(rubberBanded(swipeBase + delta))
+    }
+
+    /// Past `commitFraction` of a page, or flicked faster than `flickVelocity`, it goes on to
+    /// the next tab that way; otherwise back. The spring takes the fingers' speed.
+    func endTabSwipe(delta: CGFloat, velocity: CGFloat) {
+        guard state == .open else { return }
+        let last = PanelTab.allCases.count - 1
+        let raw = swipeBase + delta
+        let moved = raw - CGFloat(swipeStart)
+        var target = swipeStart
+        if abs(moved) >= 1 {
+            target = Int(raw.rounded())
+        } else if moved > gestureTuning.commitFraction || velocity > gestureTuning.flickVelocity {
+            target = swipeStart + 1
+        } else if moved < -gestureTuning.commitFraction || velocity < -gestureTuning.flickVelocity {
+            target = swipeStart - 1
+        }
+        target = min(max(target, 0), last)
+        let newTab = PanelTab.allCases[target]
+        if newTab != tab {
+            Haptics.tap()
+            commit(newTab)
+        }
+        tabDriver.animate(to: CGFloat(target), with: tabSpring, initialVelocity: velocity)
+    }
+
+    /// Past the first and last tab the pages resist: a fraction of the fingers, up to a limit.
+    private func rubberBanded(_ value: CGFloat) -> CGFloat {
+        let last = CGFloat(PanelTab.allCases.count - 1)
+        let t = gestureTuning
+        if value < 0 { return -min(-value * t.rubberBand, t.rubberBandLimit) }
+        if value > last { return last + min((value - last) * t.rubberBand, t.rubberBandLimit) }
+        return value
     }
 
     /// A click on one of the band's controls: a light tick, then its action.
     func click(_ action: () -> Void) {
         Haptics.tap()
         action()
-    }
-
-    /// The selected tab's AppKit view (terminal container or Search card).
-    private var selectedView: NSView {
-        switch tab {
-        case .terminal: session.container
-        case .search: search.session.card
-        }
     }
 
     private func focusSelectedTab() {
@@ -354,7 +463,7 @@ final class NotchViewModel: SwipeTarget {
             panel.orderOut(nil)
             panel.orderFrontRegardless()
         }
-        selectedView.isHidden = true
+        pager.isShowingPages = false
     }
 
     private func handleEscape() -> Bool {
@@ -399,5 +508,6 @@ final class NotchViewModel: SwipeTarget {
     }
 
     var debugDriver: SpringDriver { driver }
+    var debugTabDriver: SpringDriver { tabDriver }
     #endif
 }
