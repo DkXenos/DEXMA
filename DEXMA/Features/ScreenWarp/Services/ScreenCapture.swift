@@ -20,6 +20,8 @@ final class ScreenCapture: NSObject, SCStreamOutput, SCStreamDelegate {
         var lastFrameTime: CFTimeInterval?
         var frameCount = 0
         var longestGap: CFTimeInterval = 0
+        /// A main-queue `onNewFrame` is on its way: don't queue another (coalesced).
+        var notifyPending = false
     }
 
     nonisolated private let shared = OSAllocatedUnfairLock(uncheckedState: Shared())
@@ -28,12 +30,16 @@ final class ScreenCapture: NSObject, SCStreamOutput, SCStreamDelegate {
     private var stream: SCStream?
     private var isStarting = false
     private var target: (displayID: CGDirectDisplayID, rect: CGRect, pixels: CGSize)?
+    /// Most frames per second asked of the stream.
+    private(set) var frameRate = 120
     /// When the last `start` was asked for, for measuring start-up latency.
     private(set) var requestTime: CFTimeInterval = 0
 
     var isRunning: Bool { stream != nil }
     /// The user stopped the stream from macOS's recording indicator.
     var onUserStopped: (() -> Void)?
+    /// A new frame arrived (on the main queue; bursts coalesce into one call).
+    var onNewFrame: (() -> Void)?
 
     /// The newest frame and a number that changes whenever it does.
     func latestFrame() -> (buffer: CVPixelBuffer, generation: Int)? {
@@ -60,7 +66,7 @@ final class ScreenCapture: NSObject, SCStreamOutput, SCStreamDelegate {
         }
         if let stream, target?.displayID == displayID {
             target = wanted
-            stream.updateConfiguration(Self.configuration(for: wanted, screen: screen)) { error in
+            stream.updateConfiguration(Self.configuration(for: wanted, screen: screen, fps: frameRate)) { error in
                 if let error { Self.logger.error("Retarget failed: \(error.localizedDescription, privacy: .public)") }
             }
             return
@@ -85,7 +91,7 @@ final class ScreenCapture: NSObject, SCStreamOutput, SCStreamDelegate {
                 }
                 let mine = content.applications.filter { $0.processID == getpid() }
                 let filter = SCContentFilter(display: display, excludingApplications: mine, exceptingWindows: [])
-                let configuration = Self.configuration(for: wanted, screen: nil)
+                let configuration = Self.configuration(for: wanted, screen: nil, fps: self.frameRate)
                 if let colorSpace { configuration.colorSpaceName = colorSpace }
                 let stream = SCStream(filter: filter, configuration: configuration, delegate: self)
                 try stream.addStreamOutput(self, type: .screen, sampleHandlerQueue: self.queue)
@@ -98,7 +104,7 @@ final class ScreenCapture: NSObject, SCStreamOutput, SCStreamDelegate {
                 }
                 self.stream = stream
                 if let target = self.target, target.rect != wanted.rect || target.pixels != wanted.pixels {
-                    try? await stream.updateConfiguration(Self.configuration(for: target, screen: nil))
+                    try? await stream.updateConfiguration(Self.configuration(for: target, screen: nil, fps: self.frameRate))
                 }
             } catch {
                 self?.isStarting = false
@@ -112,6 +118,16 @@ final class ScreenCapture: NSObject, SCStreamOutput, SCStreamDelegate {
         stopStream()
     }
 
+    /// At most `fps` frames per second from now on (applied to a running stream right away).
+    func setFrameRate(_ fps: Int) {
+        guard fps != frameRate else { return }
+        frameRate = fps
+        guard let stream, let target else { return }
+        stream.updateConfiguration(Self.configuration(for: target, screen: nil, fps: fps)) { error in
+            if let error { Self.logger.error("Frame rate change failed: \(error.localizedDescription, privacy: .public)") }
+        }
+    }
+
     private func stopStream() {
         guard let stream else { return }
         self.stream = nil
@@ -120,12 +136,12 @@ final class ScreenCapture: NSObject, SCStreamOutput, SCStreamDelegate {
     }
 
     private static func configuration(for target: (displayID: CGDirectDisplayID, rect: CGRect, pixels: CGSize),
-                                      screen: NSScreen?) -> SCStreamConfiguration {
+                                      screen: NSScreen?, fps: Int) -> SCStreamConfiguration {
         let configuration = SCStreamConfiguration()
         configuration.sourceRect = target.rect
         configuration.width = Int(target.pixels.width)
         configuration.height = Int(target.pixels.height)
-        configuration.minimumFrameInterval = CMTime(value: 1, timescale: 120)
+        configuration.minimumFrameInterval = CMTime(value: 1, timescale: CMTimeScale(max(fps, 1)))
         configuration.pixelFormat = kCVPixelFormatType_32BGRA
         configuration.showsCursor = false  // The real cursor is drawn above everything anyway.
         configuration.queueDepth = 4
@@ -146,13 +162,23 @@ final class ScreenCapture: NSObject, SCStreamOutput, SCStreamDelegate {
               status == .complete || status == .started,
               let buffer = sampleBuffer.imageBuffer else { return }
         let now = CACurrentMediaTime()
-        shared.withLockUnchecked { state in
+        let notify = shared.withLockUnchecked { state -> Bool in
             state.latest = buffer
             state.generation &+= 1
             if state.firstFrameTime == nil { state.firstFrameTime = now }
             if let last = state.lastFrameTime { state.longestGap = max(state.longestGap, now - last) }
             state.lastFrameTime = now
             state.frameCount += 1
+            guard !state.notifyPending else { return false }
+            state.notifyPending = true
+            return true
+        }
+        if notify {
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                self.shared.withLockUnchecked { $0.notifyPending = false }
+                self.onNewFrame?()
+            }
         }
     }
 

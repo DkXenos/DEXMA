@@ -2,12 +2,15 @@ import AppKit
 
 /// Bends the real screen around the notch, the way the screen warps around the iPhone's
 /// Camera Control: while the notch moves (pushing space out as it grows, pulling it in as it
-/// shrinks) and around the pointer as it comes near the notch.
+/// shrinks), around the pointer as it comes near the notch, and — resting — around the swollen
+/// (peek) notch and the open panel for as long as they stay.
 ///
 /// With Screen Recording allowed, ScreenCaptureKit streams the screen under the panel and
 /// `ScreenWarpView` redraws it bent and colour-split. The stream runs only around intent
-/// (pointer nearby, fingers on the trackpad's top edge, an open or close) and stops 1.5 s
-/// after things go quiet. Without the permission, the Liquid Glass ring (`BackdropLens`,
+/// (pointer nearby, fingers on the trackpad's top edge, an open or close) and while the notch
+/// is swollen or open (the user's choice: macOS's recording indicator shows meanwhile), and
+/// stops 1.5 s after things go quiet. At rest the warp is redrawn only when the stream
+/// delivers a new frame (the screen behind changed), not every display frame. Without the permission, the Liquid Glass ring (`BackdropLens`,
 /// macOS 26) bends the edge during motion instead.
 final class ScreenBender {
     /// The Settings switch; the warp also needs the permission.
@@ -42,6 +45,15 @@ final class ScreenBender {
     private var pointerStrength: CGFloat = 0
     private var pointerPoint = CGPoint.zero
     private var pointerGoal = CGPoint.zero
+    /// The resting push of the last frame (pt): while above zero the stream keeps running.
+    private var restingAmount: CGFloat = 0
+    /// What the last frame drew, for redrawing it when a new screen frame arrives at rest.
+    private var lastUniforms: WarpUniforms?
+    private var lastStepTime: CFTimeInterval = 0
+    private var lastRestRender: CFTimeInterval = 0
+    private var restRedrawPending = false
+    private var restingSilhouetteRect: CGRect?
+    private var restingRadius: CGFloat = 0
 
     init(panel: NSPanel, container: NSView, geometry: @escaping () -> NotchGeometry) {
         self.panel = panel
@@ -54,6 +66,7 @@ final class ScreenBender {
             self?.stoppedByUser = true
             self?.warpView.hide()
         }
+        capture.onNewFrame = { [weak self] in self?.redrawAtRest() }
         refreshPermission()
     }
 
@@ -111,9 +124,12 @@ final class ScreenBender {
     /// Once per display frame (and with `motion == nil` once motion ends). Returns true while
     /// the pointer lens still needs frames.
     func step(dt: CFTimeInterval, motion: SilhouetteMotion?) -> Bool {
+        lastStepTime = CACurrentMediaTime()
+        capture.setFrameRate(120)  // Moving: every display frame.
         let pointerBusy = stepPointer(dt)
+        restingAmount = motion?.restingPush ?? 0
         let pushing = (motion?.strength ?? 0) * (motion?.direction ?? 0) * tuning.screenWarp
-            + tuning.hoverPush * pointerStrength
+            + restingAmount + tuning.hoverPush * pointerStrength
         let lens = tuning.hoverLens * pointerStrength
         #if DEBUG
         let wantsWarp = canWarp && (abs(pushing) > 0.01 || lens > 0.001 || debugFullCoverage)
@@ -121,6 +137,8 @@ final class ScreenBender {
         let wantsWarp = canWarp && (abs(pushing) > 0.01 || lens > 0.001)
         #endif
 
+        restingSilhouetteRect = motion?.silhouette
+        restingRadius = motion?.radius ?? 0
         if wantsWarp, let frame = capture.latestFrame() {
             noteActivity()
             warpBlend = min(warpBlend + CGFloat(dt) / 0.08, 1)
@@ -145,17 +163,80 @@ final class ScreenBender {
             uniforms.debug.x = debugFullCoverage ? 1 : 0
             #endif
             warpView.render(frame, uniforms: uniforms, colorSpace: panel.screen?.colorSpace?.cgColorSpace)
+            lastUniforms = uniforms
             glass.update(silhouette: .zero, radius: 0, ring: 0)
         } else {
             if wantsWarp {
                 noteActivity()  // Waiting for the stream's first frame.
+                // At rest no more display frames come: the first stream frame draws it.
+                if restingAmount > 0 { prepare() }
             } else {
                 warpBlend = 0
             }
+            lastUniforms = nil
             warpView.hide()
             updateGlass(motion)
         }
         return pointerBusy
+    }
+
+    /// A new screen frame arrived. While the display link is resting (the notch swollen or
+    /// open and still), redraw the resting warp over it, with the stream slowed to
+    /// `restingWarpRate` (a thin bent band; a busy screen behind, e.g. a video, would otherwise
+    /// cost a capture and a draw per display frame); a change arriving sooner is drawn when the
+    /// interval ends. While the link runs, `step` draws.
+    private func redrawAtRest() {
+        #if DEBUG
+        if debugSkipRestRedraw { return }
+        #endif
+        let now = CACurrentMediaTime()
+        guard restingAmount > 0, canWarp, now - lastStepTime > 0.03 else { return }
+        let rate = max(tuning.restingWarpRate, 1)
+        capture.setFrameRate(rate)
+        let interval = 1.0 / CFTimeInterval(rate)
+        guard now - lastRestRender >= interval - 0.001 else {
+            guard !restRedrawPending else { return }
+            restRedrawPending = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + (lastRestRender + interval - now)) { [weak self] in
+                self?.restRedrawPending = false
+                self?.redrawAtRest()
+            }
+            return
+        }
+        guard let frame = capture.latestFrame() else { return }
+        lastRestRender = now
+        noteActivity()
+        var uniforms: WarpUniforms
+        if let lastUniforms {
+            uniforms = lastUniforms
+        } else {
+            // The stream wasn't there yet at the last frame: start from the resting warp (no
+            // pointer lens), fading in over the next few screen frames.
+            warpBlend = 0
+            uniforms = restingUniforms()
+        }
+        if warpBlend < 1 {
+            warpBlend = min(warpBlend + 0.25, 1)
+            let full = restingUniforms()
+            uniforms.amount = full.amount * Float(warpBlend)
+        }
+        warpView.render(frame, uniforms: uniforms, colorSpace: panel.screen?.colorSpace?.cgColorSpace,
+                        synchronized: false)
+        lastUniforms = uniforms
+    }
+
+    /// The resting warp around the silhouette at the panel's current size, no pointer lens.
+    private func restingUniforms() -> WarpUniforms {
+        let silhouette = restingSilhouetteRect ?? restingSilhouette()
+        var uniforms = WarpUniforms()
+        let size = panel.frame.size
+        uniforms.size = SIMD2(Float(size.width), Float(size.height))
+        uniforms.amount = Float(min(restingAmount, tuning.screenWarpReach))
+        uniforms.body = SIMD4(Float(silhouette.midX), Float(silhouette.width), Float(silhouette.height),
+                              Float(restingRadius))
+        uniforms.reach = Float(tuning.screenWarpReach)
+        uniforms.chroma = Float(tuning.screenChroma)
+        return uniforms
     }
 
     /// Launch: compiles nothing new (the warp pipeline is built in `ScreenWarpView.init`), but
@@ -210,7 +291,8 @@ final class ScreenBender {
         DispatchQueue.main.asyncAfter(deadline: .now() + idle) { [weak self] in
             guard let self else { return }
             self.stopCheckPending = false
-            if CACurrentMediaTime() - self.lastActivity >= idle - 0.01, self.pointerTarget == 0 {
+            if CACurrentMediaTime() - self.lastActivity >= idle - 0.01, self.pointerTarget == 0,
+               self.restingAmount == 0 {
                 self.stopCapture()
             } else {
                 self.scheduleStopCheck()
@@ -222,6 +304,7 @@ final class ScreenBender {
         capture.stop()
         warpView.hide()
         warpBlend = 0
+        lastUniforms = nil
     }
 
     #if DEBUG
@@ -232,6 +315,7 @@ final class ScreenBender {
     }
 
     var debugFullCoverage = false
+    var debugSkipRestRedraw = false
 
     /// Posed frames draw at full strength straight away.
     var debugPosing = false
@@ -239,5 +323,6 @@ final class ScreenBender {
     var debugPermitted: Bool { permitted }
     var debugGlassShowing: Bool { glass.isShowing }
     var debugWarpShowing: Bool { !warpView.isHidden }
+    var debugRestingAmount: CGFloat { restingAmount }
     #endif
 }

@@ -7,8 +7,9 @@ import QuartzCore
 /// (ScreenWarp.metal). Lives below the black silhouette in `PanelContentView`; hidden — so not
 /// composited at all — whenever there's nothing to bend.
 ///
-/// Presented inside the current Core Animation transaction, so each warp frame lands on screen
-/// together with the SwiftUI silhouette it was computed for.
+/// While the silhouette moves, presented inside the current Core Animation transaction, so each
+/// warp frame lands on screen together with the SwiftUI silhouette it was computed for. At rest
+/// (the silhouette still) it's presented on its own, without blocking the main thread.
 final class ScreenWarpView: NSView {
     private let metalLayer = CAMetalLayer()
     private let device = MTLCreateSystemDefaultDevice()
@@ -43,9 +44,10 @@ final class ScreenWarpView: NSView {
     var isUsable: Bool { pipeline != nil && commandQueue != nil }
 
     /// Draws one frame. Returns false (and draws nothing) if there's no capture frame yet.
+    /// `synchronized`: in step with the current CA transaction (the silhouette is moving).
     @discardableResult
     func render(_ frame: (buffer: CVPixelBuffer, generation: Int), uniforms: WarpUniforms,
-                colorSpace: CGColorSpace?) -> Bool {
+                colorSpace: CGColorSpace?, synchronized: Bool = true) -> Bool {
         guard let device, let commandQueue, let pipeline, bounds.width > 0 else { return false }
         if frame.generation != textureGeneration || texture == nil {
             guard let surface = CVPixelBufferGetIOSurface(frame.buffer)?.takeUnretainedValue() else { return false }
@@ -64,6 +66,7 @@ final class ScreenWarpView: NSView {
         if metalLayer.drawableSize != drawableSize { metalLayer.drawableSize = drawableSize }
         if metalLayer.contentsScale != scale { metalLayer.contentsScale = scale }
         if let colorSpace, metalLayer.colorspace !== colorSpace { metalLayer.colorspace = colorSpace }
+        if metalLayer.presentsWithTransaction != synchronized { metalLayer.presentsWithTransaction = synchronized }
         if isHidden { isHidden = false }
         CATransaction.commit()
 
@@ -82,11 +85,16 @@ final class ScreenWarpView: NSView {
         encoder.setFragmentBytes(&values, length: MemoryLayout<WarpUniforms>.stride, index: 0)
         encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
         encoder.endEncoding()
-        // With presentsWithTransaction the drawable is shown in the current CA transaction:
-        // schedule the GPU work first, then present.
-        commands.commit()
-        commands.waitUntilScheduled()
-        drawable.present()
+        if synchronized {
+            // With presentsWithTransaction the drawable is shown in the current CA transaction:
+            // schedule the GPU work first, then present.
+            commands.commit()
+            commands.waitUntilScheduled()
+            drawable.present()
+        } else {
+            commands.present(drawable)
+            commands.commit()
+        }
         return true
     }
 

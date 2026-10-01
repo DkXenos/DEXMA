@@ -45,6 +45,7 @@ final class NotchViewModel: SwipeTarget {
         let driver = SpringDriver(window: panel)
         self.driver = driver
         motion = LiquidMotionEngine(content: session, driver: driver)
+        motion.peekProgress = Self.peekProgress
         driver.onChange = { [weak self] value in self?.progress = value }
         driver.onRest = { [weak self] value in self?.didSettle(at: value) }
         driver.onArrive = { [weak self] target, velocity in self?.didArrive(at: target, velocity: velocity) }
@@ -171,10 +172,13 @@ final class NotchViewModel: SwipeTarget {
         if hovering, state == .closed, progress < 0.2 {
             state = .peek
             panel.ignoresMouseEvents = false  // So the click that opens lands on us.
+            // The swell is liquid too: a breath, the jelly, and the screen pushed out.
+            if motion.begin(), progress <= 0.01 { effects.anticipate() }
             driver.animate(to: Self.peekProgress, with: openSpring)
         } else if !hovering, state == .peek {
             state = .closed
             panel.ignoresMouseEvents = true
+            motion.begin()
             driver.animate(to: 0, with: closeSpring)
         }
     }

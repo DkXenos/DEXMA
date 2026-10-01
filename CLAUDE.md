@@ -176,6 +176,17 @@ Layers — keep them separated:
   ~1.6 %, WindowServer unchanged; 0 when not capturing (`-captureidle <s>` probe). Without the permission:
   the Liquid Glass ring (narrow, clamped to the window). `CGPreflightScreenCaptureAccess`
   costs ~10 ms: only ever called off the main thread (cached).
+- Notch warp at rest (the user's clarification of "hover warp", 2026-10-01): the peek swell
+  (hover on the closed notch) runs the liquid motion like an open (breath via `anticipate`,
+  jelly, rim light), and a resting colour-warp push stays around the silhouette while it's
+  swollen (`peekWarp` 4 pt) or open (`openWarp` 6 pt), following the progress in between
+  (`LiquidMotionEngine.restingPush`; 0 closed, with Reduce Motion or Off). The user chose the
+  ScreenCaptureKit warp over a Liquid Glass rim, knowing macOS's recording indicator stays on
+  while the panel is open. At rest the stream is slowed to `restingWarpRate` (60 fps) and the
+  warp is redrawn only on new screen frames (`ScreenCapture.onNewFrame`, coalesced; presented
+  outside the CA transaction), never every display frame. Measured (`-warptest`, Debug, a busy
+  screen behind — a video): 16.5 % CPU before the slowdown → 8.7 % (capture alone 2.8 %); a
+  still screen behind sends almost no frames. Capture stops 1.5 s after closing as before.
 - Band controls (Phase 13): the same system, locally. `BandMotion` steps on the panel's display
   link (`LiquidMotionEngine.step`, woken by hover/press/select; paused once exactly zero).
   Hover: a breath (everything to full over `controlBreathDuration`, then `controlRest` of it)

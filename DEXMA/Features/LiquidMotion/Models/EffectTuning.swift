@@ -45,6 +45,14 @@ nonisolated struct EffectTuning: Equatable {
     var hoverReach: CGFloat = 28
     /// The screen right around the notch pushed out this much while the pointer is over it.
     var hoverPush: CGFloat = 3
+    /// Resting push-out (pt, with the colour split) that stays around the notch while it's
+    /// swollen under the pointer (peek) and around the open panel; it follows the progress, so
+    /// opening grows it from the peek's to the open's and closing shrinks it to nothing.
+    var peekWarp: CGFloat = 4
+    var openWarp: CGFloat = 6
+    /// Screen frames per second captured (and the warp redrawn) while the notch rests swollen
+    /// or open; 120 while it moves. Lower costs less with a busy screen behind (a video).
+    var restingWarpRate: Int = 60
 
     /// Fallback without Screen Recording (macOS 26): how far past the silhouette the Liquid
     /// Glass ring bends the screen at full speed. Kept narrow: wide, fast-changing glass
@@ -106,6 +114,8 @@ nonisolated struct EffectTuning: Equatable {
         t.screenWarp *= k
         t.hoverLens *= k
         t.hoverPush *= k
+        t.peekWarp *= k
+        t.openWarp *= k
         t.aberration *= k
         t.highlight *= k
         t.glow *= k

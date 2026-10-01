@@ -93,6 +93,50 @@ enum WarpTest {
             }
             notch.debugPose(progress: 0, effect: .init())
             notch.debugEndMotion()
+            bender.debugPosing = false
+
+            // 6. The resting warp: around the swollen (peek) notch and the open panel, kept while
+            // they stay (capture running past its 1.5 s idle stop), redrawn only on new screen
+            // frames; gone after closing.
+            try? await Task.sleep(for: .milliseconds(500))
+            notch.setHovering(true)
+            try? await Task.sleep(for: .milliseconds(800))
+            report.line(String(format: "peek: resting push %.2f pt, warp drawn %@, capture running %@",
+                               bender.debugRestingAmount, bender.debugWarpShowing ? "yes" : "NO",
+                               capture.isRunning ? "yes" : "NO"))
+            if let image = await DebugImages.screen(around: panel) { DebugImages.write(image, dir, "warp-peek") }
+            notch.setHovering(false)
+            _ = await notch.waitForRest()
+            notch.open()
+            _ = await notch.waitForRest()
+            try? await Task.sleep(for: .seconds(2.5))
+            let framesBefore = capture.statistics().frames
+            let cpuBefore = processCPUTime()
+            let wallBefore = CACurrentMediaTime()
+            try? await Task.sleep(for: .seconds(4))
+            let cpu = (processCPUTime() - cpuBefore) / (CACurrentMediaTime() - wallBefore) * 100
+            report.line(String(format: "open at rest (6.5 s in): resting push %.2f pt, warp drawn %@, capture running %@, %d screen frames in 4 s, DEXMA CPU %.1f %%, display link %@",
+                               bender.debugRestingAmount, bender.debugWarpShowing ? "yes" : "NO",
+                               capture.isRunning ? "yes" : "NO", capture.statistics().frames - framesBefore, cpu,
+                               notch.debugDriver.isAnimating ? "running" : "paused"))
+            if let image = await DebugImages.screen(around: panel) { DebugImages.write(image, dir, "warp-open-rest") }
+            // The same with the resting redraw off: are those frames the screen behind changing,
+            // or our own redraws coming back?
+            bender.debugSkipRestRedraw = true
+            try? await Task.sleep(for: .seconds(1))
+            let quietFrames = capture.statistics().frames
+            try? await Task.sleep(for: .seconds(4))
+            let quietCPU = processCPUTime()
+            let quietWall = CACurrentMediaTime()
+            try? await Task.sleep(for: .seconds(4))
+            report.line(String(format: "open at rest, warp not redrawn: %d screen frames in 8 s, DEXMA CPU %.1f %% (capture alone)",
+                               capture.statistics().frames - quietFrames,
+                               (processCPUTime() - quietCPU) / (CACurrentMediaTime() - quietWall) * 100))
+            bender.debugSkipRestRedraw = false
+            notch.close()
+            _ = await notch.waitForRest()
+            try? await Task.sleep(for: .seconds(2.5))
+            report.line("closed 2.5 s: capture running \(capture.isRunning ? "STILL" : "no (stopped)"), warp drawn \(bender.debugWarpShowing ? "STILL" : "no")")
             report.line("done")
             NSApp.terminate(nil)
         }
@@ -126,6 +170,14 @@ enum WarpTest {
                            intervals.count, late, intervals.max() ?? 0, FramePacingProbe.percentile(busy, 0.5),
                            FramePacingProbe.percentile(busy, 0.95), busy.max() ?? 0,
                            after.frames - before.frames, after.longestGap * 1000))
+    }
+
+    /// This process's CPU time (user + system), seconds.
+    private static func processCPUTime() -> Double {
+        var usage = rusage()
+        getrusage(RUSAGE_SELF, &usage)
+        return Double(usage.ru_utime.tv_sec + usage.ru_stime.tv_sec)
+            + Double(usage.ru_utime.tv_usec + usage.ru_stime.tv_usec) / 1_000_000
     }
 
     /// Colour only: the screen captures are opaque.

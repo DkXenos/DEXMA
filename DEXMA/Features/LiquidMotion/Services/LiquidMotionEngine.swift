@@ -29,6 +29,8 @@ final class LiquidMotionEngine {
     /// The selected tab's content: what the snapshot pictures.
     private(set) var content: MotionContent
     private let driver: SpringDriver
+    /// The notch's swollen (peek) progress: where the resting warp reaches `peekWarp`.
+    var peekProgress: CGFloat = 0.06
     private var snapshotRefreshPending = false
     private var lastContentChange: CFTimeInterval = 0
     #if DEBUG
@@ -156,9 +158,17 @@ final class LiquidMotionEngine {
 
     /// The silhouette as drawn this frame and how hard it's moving, for bending the screen
     /// around it: speed peaking mid-way (or the anticipation swell); out while it grows, in
-    /// while it shrinks. Nil at rest.
+    /// while it shrinks; plus the push that stays while swollen or open. Nil when closed and
+    /// still.
     private func motion(progress: CGFloat, geometry: NotchGeometry) -> SilhouetteMotion? {
-        guard effects.isActive else { return nil }
+        let resting = restingPush(progress)
+        guard effects.isActive || resting > 0 else { return nil }
+        guard effects.isActive else {
+            let shape = geometry.shape(at: progress)
+            return SilhouetteMotion(
+                silhouette: CGRect(x: shape.centerX - shape.width / 2, y: 0, width: shape.width, height: shape.height),
+                radius: shape.drawnBottomRadius, strength: 0, direction: 0, restingPush: resting)
+        }
         let frame = effects.frame
         let tuning = effects.tuning
         let shape = frame.silhouette(in: geometry, at: progress).shape
@@ -172,7 +182,19 @@ final class LiquidMotionEngine {
         return SilhouetteMotion(
             silhouette: CGRect(x: shape.centerX - shape.width / 2, y: 0,
                                width: shape.width, height: shape.height),
-            radius: shape.drawnBottomRadius, strength: strength, direction: direction)
+            radius: shape.drawnBottomRadius, strength: strength, direction: direction,
+            restingPush: resting)
+    }
+
+    /// The push that stays around the silhouette: none closed, `peekWarp` once swollen,
+    /// `openWarp` fully open, following the progress in between (so it grows and shrinks with
+    /// every motion). None with Reduce Motion or the intensity at Off.
+    private func restingPush(_ progress: CGFloat) -> CGFloat {
+        guard isEnabled, progress > 0 else { return 0 }
+        let t = effects.tuning
+        let peek = max(peekProgress, 0.001)
+        if progress <= peek { return t.peekWarp * progress / peek }
+        return lerp(t.peekWarp, t.openWarp, min((progress - peek) / (1 - peek), 1))
     }
 
     /// Takes the next snapshot once the content has been quiet for half a second and the
