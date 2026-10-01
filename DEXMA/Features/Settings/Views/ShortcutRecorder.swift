@@ -5,6 +5,8 @@ import SwiftUI
 /// shortcut is switched off (`onRecordingChange`) so it can be typed as the new one.
 struct ShortcutRecorder: View {
     @Binding var combo: KeyCombo
+    /// What Reset goes back to.
+    var defaultCombo = KeyCombo.defaultCombo
     let onRecordingChange: (Bool) -> Void
 
     @State private var isRecording = false
@@ -19,8 +21,8 @@ struct ShortcutRecorder: View {
             .frame(minWidth: 130)
             if isRecording {
                 Text(hint ?? "Esc cancels").font(.caption).foregroundStyle(.secondary)
-            } else if combo != .defaultCombo {
-                Button("Reset") { combo = .defaultCombo }
+            } else if combo != defaultCombo {
+                Button("Reset") { combo = defaultCombo }
             }
         }
         .onDisappear { stop() }

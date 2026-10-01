@@ -40,6 +40,23 @@ final class AppSettings {
     var closesOnFocusLoss: Bool { didSet { save(closesOnFocusLoss, "closesOnFocusLoss") } }
     var hoverToPeek: Bool { didSet { save(hoverToPeek, "hoverToPeek") } }
     var display: DisplayChoice { didSet { save(display.rawValue, "display") } }
+    /// Draw to ask: its own global shortcut.
+    var captureHotKey: KeyCombo {
+        didSet { save(try? JSONEncoder().encode(captureHotKey), "captureHotKey") }
+    }
+    /// Each capture goes into a new Claude chat (otherwise the one that's open).
+    var captureNewChat: Bool { didSet { save(captureNewChat, "captureNewChat") } }
+    /// Also keep a copy of each capture in ~/Pictures/DEXMA.
+    var captureSavesCopies: Bool { didSet { save(captureSavesCopies, "captureSavesCopies") } }
+    /// Capture mode's edge glow and stroke shimmer follow the glass effect strength…
+    var captureEffectsFollowGlass: Bool { didSet { save(captureEffectsFollowGlass, "captureEffectsFollowGlass") } }
+    /// …or this, 0 = off … 1 = full.
+    var captureEffectIntensity: Double { didSet { save(captureEffectIntensity, "captureEffectIntensity") } }
+
+    /// The capture effects' strength in use.
+    var captureEffectiveIntensity: Double {
+        captureEffectsFollowGlass ? effectIntensity : captureEffectIntensity
+    }
 
     init() {
         let d = UserDefaults.standard
@@ -71,6 +88,12 @@ final class AppSettings {
         closesOnFocusLoss = bool("closesOnFocusLoss", true)
         hoverToPeek = bool("hoverToPeek", true)
         display = d.string(forKey: "display").flatMap(DisplayChoice.init(rawValue:)) ?? .notched
+        captureHotKey = d.data(forKey: "captureHotKey").flatMap { try? JSONDecoder().decode(KeyCombo.self, from: $0) }
+            ?? .defaultCaptureCombo
+        captureNewChat = bool("captureNewChat", false)
+        captureSavesCopies = bool("captureSavesCopies", false)
+        captureEffectsFollowGlass = bool("captureEffectsFollowGlass", true)
+        captureEffectIntensity = double("captureEffectIntensity", 1, Self.effectIntensityRange)
     }
 
     private func save(_ value: Any?, _ key: String) {

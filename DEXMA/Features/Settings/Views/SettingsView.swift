@@ -97,6 +97,52 @@ struct SettingsView: View {
                 } minimumValueLabel: { Text("None") } maximumValueLabel: { Text("Lots") }
             }
 
+            Section {
+                LabeledContent("Shortcut") {
+                    ShortcutRecorder(combo: $settings.captureHotKey, defaultCombo: .defaultCaptureCombo,
+                                     onRecordingChange: viewModel.setRecordingShortcut)
+                }
+                if viewModel.hotKeysClash {
+                    Label("This is also the panel's shortcut. Pick a different one.",
+                          systemImage: "exclamationmark.triangle")
+                        .foregroundStyle(.orange)
+                } else if !viewModel.isCaptureHotKeyWorking {
+                    Label("Another app is using this shortcut. Pick a different one.",
+                          systemImage: "exclamationmark.triangle")
+                        .foregroundStyle(.orange)
+                }
+                Toggle(isOn: $settings.captureNewChat) {
+                    Text("Start a new chat for each capture")
+                    Text("Otherwise the capture goes into the chat that's open in the Claude tab.")
+                }
+                Toggle(isOn: $settings.captureSavesCopies) {
+                    Text("Also save captures to ~/Pictures/DEXMA")
+                    Text("Otherwise captures stay in memory and are gone once they're in Claude.")
+                }
+                Toggle("Effects follow the glass effect strength", isOn: $settings.captureEffectsFollowGlass)
+                if !settings.captureEffectsFollowGlass {
+                    Slider(value: $settings.captureEffectIntensity, in: AppSettings.effectIntensityRange) {
+                        Text("Capture effects")
+                        Text("The glow around the screen's edges and the shimmer along what you draw.")
+                    } minimumValueLabel: { Text("Off") } maximumValueLabel: { Text("Full") }
+                }
+                LabeledContent {
+                    if viewModel.isScreenRecordingGranted {
+                        Label("On", systemImage: "checkmark.circle.fill").foregroundStyle(.green)
+                    } else {
+                        Button("Allow Screen Recording…", action: viewModel.requestScreenRecording)
+                    }
+                } label: {
+                    Text("Screen Recording")
+                    Text("Needed to see what you draw around. One still picture per capture, DEXMA's windows left out.")
+                }
+            } header: {
+                Text("Draw to ask Claude")
+            } footer: {
+                Text("Press the shortcut or the pencil in the notch, draw around anything (or click a window), and it lands in Claude's message box.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+
             Section("Claude tab") {
                 LabeledContent("Page zoom") {
                     Slider(value: $settings.claudeZoom, in: AppSettings.claudeZoomRange, step: 0.05)

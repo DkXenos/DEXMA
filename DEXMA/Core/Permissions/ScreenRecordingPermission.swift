@@ -2,13 +2,15 @@ import AppKit
 import CoreGraphics
 import Observation
 
-/// Screen Recording access, for bending the real screen around the notch. Asking only ever
-/// happens from a button. Like Accessibility, TCC has no change notification, so it's polled
-/// while a window that shows it is open. After granting, macOS may ask to reopen DEXMA.
+/// Screen Recording access, for bending the real screen around the notch and for Draw to ask.
+/// Asking only ever happens from a button. Like Accessibility, TCC has no change notification,
+/// so it's polled while a window that shows it is open (off the main thread: each check takes
+/// ~10 ms). After granting, macOS may ask to reopen DEXMA.
 @Observable
 final class ScreenRecordingPermission {
     private(set) var isGranted = CGPreflightScreenCaptureAccess()
     @ObservationIgnored private var timer: Timer?
+    @ObservationIgnored private var checking = false
 
     func startMonitoring() {
         guard timer == nil else { return }
@@ -24,8 +26,13 @@ final class ScreenRecordingPermission {
     }
 
     func refresh() {
-        let granted = CGPreflightScreenCaptureAccess()
-        if granted != isGranted { isGranted = granted }
+        guard !checking else { return }
+        checking = true
+        Task {
+            let granted = await Task.detached(priority: .utility) { CGPreflightScreenCaptureAccess() }.value
+            checking = false
+            if granted != isGranted { isGranted = granted }
+        }
     }
 
     /// Shows the system prompt (first time) and opens the Screen Recording pane.

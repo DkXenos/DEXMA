@@ -17,6 +17,9 @@ final class AppCoordinator: WindowRouter {
     private var bender: ScreenBender?
     private var gestures: GestureEngine?
     private var hotKey: HotKeyRegistrar?
+    private var captureHotKey: HotKeyRegistrar?
+    private var capture: CaptureViewModel?
+    private var captureOnboarding: CaptureOnboardingWindowController?
     private var statusItem: StatusItemController?
     private var settingsWindow: SettingsWindowController?
     private var onboarding: OnboardingWindowController?
@@ -37,6 +40,11 @@ final class AppCoordinator: WindowRouter {
         let notch = NotchViewModel(panel: panel, session: session, search: search, claude: claude, pager: pager,
                                    runningDot: runningDot, urlField: urlField, geometry: geometry)
         notch.geometryForOpening = { [weak self] in self?.geometryProvider.makeGeometry() }
+        // Pre-warm: the capture overlay (window, layers, hint) exists from launch, off screen.
+        let capture = CaptureViewModel(panel: CaptureOverlayPanel(), claude: claude.session, router: self)
+        capture.target = notch
+        notch.capture = capture
+        self.capture = capture
 
         let hostingView = NSHostingView(rootView: NotchContentView(viewModel: notch))
         hostingView.sizingOptions = []  // Fixed-size panel: SwiftUI must never resize it.
@@ -70,10 +78,14 @@ final class AppCoordinator: WindowRouter {
         hover.onChange = { [weak notch] inside in notch?.setHovering(inside) }
         hover.onMove = { [weak bender] point in bender?.pointerMoved(to: point) }
 
-        hotKey = HotKeyRegistrar { [weak notch] in notch?.toggle() }
+        // While capturing, the panel's shortcut cancels it (the panel would open under the overlay).
+        hotKey = HotKeyRegistrar { [weak notch, weak capture] in
+            if let capture, capture.isActive { capture.cancel() } else { notch?.toggle() }
+        }
+        captureHotKey = HotKeyRegistrar { [weak capture] in capture?.toggle() }
         settings.onChange = { [weak self] in self?.applySettings() }
         applySettings()
-        let menuBar = MenuBarViewModel(settings: settings, notch: notch, router: self)
+        let menuBar = MenuBarViewModel(settings: settings, notch: notch, capture: capture, router: self)
         statusItem = StatusItemController(viewModel: menuBar)
         NSApp.mainMenu = MainMenu.make(viewModel: menuBar)
         Self.logger.notice(
@@ -93,6 +105,7 @@ final class AppCoordinator: WindowRouter {
     /// Displays were added, removed or rearranged. Not while open: the panel moves (if it
     /// has to) the next time it opens.
     func screenParametersDidChange() {
+        capture?.cancelDrawing()
         guard let notch, notch.state != .open, let geometry = geometryProvider.makeGeometry() else { return }
         notch.updateGeometry(geometry)
     }
@@ -101,6 +114,13 @@ final class AppCoordinator: WindowRouter {
 
     private func applySettings() {
         hotKey?.register(settings.hotKey)
+        captureHotKey?.register(settings.captureHotKey)
+        if let capture {
+            capture.shortcut = settings.captureHotKey.display
+            capture.startsNewChat = settings.captureNewChat
+            capture.savesCopies = settings.captureSavesCopies
+            capture.effectIntensity = settings.captureEffectiveIntensity
+        }
         guard let notch, let gestures else { return }
         notch.escClosesPanel = settings.escClosesPanel
         notch.closesOnFocusLoss = settings.closesOnFocusLoss
@@ -127,10 +147,10 @@ final class AppCoordinator: WindowRouter {
 
     func showSettings() {
         if settingsWindow == nil {
-            guard let gestures, let hotKey else { return }
+            guard let gestures, let hotKey, let captureHotKey else { return }
             let viewModel = SettingsViewModel(settings: settings, accessibility: accessibility,
                                               screenRecording: screenRecording, gestures: gestures,
-                                              hotKey: hotKey, router: self)
+                                              hotKeys: [hotKey, captureHotKey], router: self)
             settingsWindow = SettingsWindowController(viewModel: viewModel)
         }
         settingsWindow?.show()
@@ -143,5 +163,14 @@ final class AppCoordinator: WindowRouter {
             onboarding = OnboardingWindowController(viewModel: viewModel)
         }
         onboarding?.show()
+    }
+
+    func showCaptureOnboarding() {
+        let viewModel = CaptureOnboardingViewModel(permission: screenRecording,
+                                                   shortcut: settings.captureHotKey.display)
+        viewModel.onDrawNow = { [weak self] in self?.capture?.start() }
+        captureOnboarding?.close()
+        captureOnboarding = CaptureOnboardingWindowController(viewModel: viewModel)
+        captureOnboarding?.show()
     }
 }

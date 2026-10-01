@@ -1,7 +1,8 @@
 import SwiftUI
 
 /// Everything drawn around the content: the band (tab switcher left of the notch, the selected
-/// tab's context right of it), the card's stroke and highlight, and the page dots. One
+/// tab's context right of it, the capture controls at its end), the card's stroke and highlight,
+/// and the page dots. One
 /// instance, inside the motion layer, so the open/close distortion bends it with the content
 /// and nothing is ever swapped for a picture of it. Laid out over the whole panel.
 struct NotchChrome: View {
@@ -20,6 +21,11 @@ struct NotchChrome: View {
             .offset(x: tabs.minX, y: (geometry.bandHeight - TabSwitcherLayout.tabHeight) / 2
                         - TabSwitcherLayout.padding)
             BandContext(viewModel: viewModel)
+            if let capture = viewModel.capture {
+                CaptureControls(capture: capture, band: viewModel.band, region: geometry.actionBandFrame) { action in
+                    viewModel.click(action)
+                }
+            }
             CardDecoration(size: card.size)
                 .offset(x: card.minX, y: card.minY)
             PageDots(count: PanelTab.allCases.count, progress: viewModel.tabProgress,

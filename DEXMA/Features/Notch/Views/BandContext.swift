@@ -4,12 +4,12 @@ import SwiftUI
 /// tab's context is fully there on its tab, gone a page away). Terminal: the working directory
 /// (and the running dot, see `RunningDotView`); Search: lock, domain, Reset, Open in browser;
 /// Claude: lock, claude.ai, New chat, Open in browser. Only the selected tab's buttons take
-/// clicks.
+/// clicks. The capture controls (`CaptureControls`) keep the end of the region on every tab.
 struct BandContext: View {
     let viewModel: NotchViewModel
 
     var body: some View {
-        let region = viewModel.geometry.actionBandFrame
+        let region = viewModel.contextRegion
         let progress = viewModel.tabProgress
         ZStack(alignment: .topLeading) {
             TerminalContext(layout: viewModel.terminalContext,

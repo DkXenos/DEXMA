@@ -13,6 +13,11 @@ nonisolated struct KeyCombo: Codable, Equatable {
                                        carbonModifiers: UInt32(optionKey), display: "⌥`",
                                        menuKey: "`")
 
+    /// Draw to ask (capture), ⌥⇧`.
+    static let defaultCaptureCombo = KeyCombo(keyCode: UInt32(kVK_ANSI_Grave),
+                                              carbonModifiers: UInt32(optionKey | shiftKey), display: "⌥⇧`",
+                                              menuKey: "`")
+
     var menuModifiers: NSEvent.ModifierFlags {
         var flags: NSEvent.ModifierFlags = []
         if carbonModifiers & UInt32(cmdKey) != 0 { flags.insert(.command) }

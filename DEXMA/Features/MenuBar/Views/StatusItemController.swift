@@ -21,6 +21,10 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         let toggle = item(viewModel.toggleTitle, #selector(MenuBarViewModel.togglePanel), key: combo.menuKey)
         toggle.keyEquivalentModifierMask = combo.menuModifiers
         menu.addItem(toggle)
+        let captureCombo = viewModel.captureShortcut
+        let capture = item("Draw to Ask Claude", #selector(MenuBarViewModel.startCapture), key: captureCombo.menuKey)
+        capture.keyEquivalentModifierMask = captureCombo.menuModifiers
+        menu.addItem(capture)
         menu.addItem(.separator())
         menu.addItem(item("Settings…", #selector(MenuBarViewModel.openSettings), key: ","))
         menu.addItem(item("Welcome & Permissions…", #selector(MenuBarViewModel.openWelcome)))

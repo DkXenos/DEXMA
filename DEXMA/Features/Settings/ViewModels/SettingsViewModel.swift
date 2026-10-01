@@ -13,23 +13,27 @@ final class SettingsViewModel {
     private let accessibility: AccessibilityPermission
     private let screenRecording: ScreenRecordingPermission
     private let gestures: GestureEngine
-    private let hotKey: HotKeyRegistrar
+    /// The panel's shortcut, then Draw to ask's.
+    private let hotKeys: [HotKeyRegistrar]
     @ObservationIgnored private weak var router: (any WindowRouter)?
 
     init(settings: AppSettings, accessibility: AccessibilityPermission,
          screenRecording: ScreenRecordingPermission, gestures: GestureEngine,
-         hotKey: HotKeyRegistrar, router: any WindowRouter) {
+         hotKeys: [HotKeyRegistrar], router: any WindowRouter) {
         self.settings = settings
         self.accessibility = accessibility
         self.screenRecording = screenRecording
         self.gestures = gestures
-        self.hotKey = hotKey
+        self.hotKeys = hotKeys
         self.router = router
         launchesAtLogin = LoginItem.isEnabled
     }
 
     /// False when another app holds the shortcut.
-    var isHotKeyWorking: Bool { hotKey.isWorking }
+    var isHotKeyWorking: Bool { hotKeys.first?.isWorking ?? true }
+    var isCaptureHotKeyWorking: Bool { hotKeys.last?.isWorking ?? true }
+    /// Both shortcuts are the same combination (only one of them would work).
+    var hotKeysClash: Bool { settings.hotKey == settings.captureHotKey }
     /// False without a multitouch trackpad (the gesture engine stays off).
     var areGesturesAvailable: Bool { gestures.isRunning }
     var isAccessibilityGranted: Bool { accessibility.isGranted }
@@ -41,9 +45,10 @@ final class SettingsViewModel {
         launchesAtLogin = LoginItem.isEnabled  // May need approval in System Settings first.
     }
 
-    /// The shortcut recorder started or stopped listening.
+    /// A shortcut recorder started or stopped listening: neither global shortcut may fire
+    /// meanwhile (either could be typed as the new one).
     func setRecordingShortcut(_ recording: Bool) {
-        hotKey.isPaused = recording
+        for hotKey in hotKeys { hotKey.isPaused = recording }
     }
 
     func requestAccessibility() { accessibility.requestAccess() }
@@ -63,7 +68,7 @@ final class SettingsViewModel {
     func windowWillClose() {
         accessibility.stopMonitoring()
         screenRecording.stopMonitoring()
-        hotKey.isPaused = false
+        for hotKey in hotKeys { hotKey.isPaused = false }
         gestures.onTouches = nil
         trackpadPreview.touches = []
     }

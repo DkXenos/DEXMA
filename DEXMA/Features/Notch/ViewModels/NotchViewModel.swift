@@ -5,7 +5,7 @@ import SwiftUI
 /// Single source of truth for the panel: `progress` (0 = notch, 1 = expanded) and state.
 /// The hotkey, the gesture, the pointer and the menu bar item all drive it; views only read it.
 @Observable
-final class NotchViewModel: SwipeTarget, TabSwipeTarget {
+final class NotchViewModel: SwipeTarget, TabSwipeTarget, CaptureHandoffTarget {
     static let peekProgress: CGFloat = 0.06
 
     private(set) var progress: CGFloat = 0
@@ -39,6 +39,10 @@ final class NotchViewModel: SwipeTarget, TabSwipeTarget {
     let runningDot: RunningDotView
     /// ⌘L on the Claude tab: a field over the band for pasting a link.
     let urlField: URLEntryField
+    /// Draw to ask: the band's Capture button and a waiting capture's chip (set once at launch).
+    @ObservationIgnored var capture: CaptureViewModel?
+    /// A capture is going on: the notch stays out of the way (no peeking under the overlay).
+    @ObservationIgnored private var isCapturing = false
     @ObservationIgnored var gestureTuning = GestureTuning.standard
     private let panel: NotchPanel
     private let driver: SpringDriver
@@ -224,7 +228,7 @@ final class NotchViewModel: SwipeTarget, TabSwipeTarget {
 
     /// Pointer entered or left the notch.
     func setHovering(_ hovering: Bool) {
-        if hovering, state == .closed, progress < 0.2 {
+        if hovering, state == .closed, progress < 0.2, !isCapturing {
             state = .peek
             panel.ignoresMouseEvents = false  // So the click that opens lands on us.
             // The swell is liquid too: a breath, the jelly, and the screen pushed out.
@@ -397,6 +401,16 @@ final class NotchViewModel: SwipeTarget, TabSwipeTarget {
         updateRunningDot()
     }
 
+    // MARK: Band regions
+
+    /// Right of the notch, before the capture controls: where the selected tab's context goes.
+    var contextRegion: CGRect {
+        var region = geometry.actionBandFrame
+        let aspect = capture?.pending.map(\.image.aspect)
+        region.size.width = max(region.width - (capture == nil ? 0 : CaptureBandLayout.width(chipAspect: aspect)), 0)
+        return region
+    }
+
     // MARK: Terminal context
 
     private static let contextFont = NSFont.monospacedSystemFont(ofSize: TerminalContextLayout.fontSize,
@@ -405,7 +419,7 @@ final class NotchViewModel: SwipeTarget, TabSwipeTarget {
     /// The working directory (and where the running dot goes) in the band right of the notch.
     var terminalContext: TerminalContextLayout {
         TerminalContextLayout(directory: session.status.directory, home: NSHomeDirectory(),
-                              region: geometry.actionBandFrame) { text in
+                              region: contextRegion) { text in
             (text as NSString).size(withAttributes: [.font: Self.contextFont]).width
         }
     }
@@ -569,7 +583,7 @@ final class NotchViewModel: SwipeTarget, TabSwipeTarget {
     // MARK: ⌘L URL field (Claude)
 
     private func showURLField() {
-        let region = geometry.actionBandFrame
+        let region = contextRegion
         let frame = CGRect(x: region.minX + TerminalContextLayout.notchMargin, y: region.midY - 12,
                            width: max(region.width - TerminalContextLayout.notchMargin, 0), height: 24)
         urlField.show(at: frame)
@@ -643,6 +657,54 @@ final class NotchViewModel: SwipeTarget, TabSwipeTarget {
         guard state == .open, closesOnFocusLoss else { return }
         focus.forget()
         close()
+    }
+
+    // MARK: CaptureHandoffTarget
+
+    func captureWillBegin() {
+        isCapturing = true
+        if state == .open {
+            close()
+        } else if state == .peek {
+            setHovering(false)
+        }
+    }
+
+    func captureDidEnd() {
+        isCapturing = false
+    }
+
+    func captureLanding(onScreen screenFrame: CGRect) -> CGRect? {
+        let opening = progress <= Self.peekProgress + 0.01 ? geometryForOpening?() ?? geometry : geometry
+        return opening.screenFrame == screenFrame ? opening.notchRect : nil
+    }
+
+    func prepareForCaptureLanding() {
+        motion.prepare()
+    }
+
+    func openForCapture() {
+        isCapturing = false
+        select(.claude)
+        open()
+    }
+
+    func showClaudeTab() {
+        select(.claude)
+        if state != .open { open() }
+    }
+
+    var isClaudeReadyForInsert: Bool {
+        state == .open && tab == .claude && panel.isKeyWindow && !driver.isAnimating && !effects.isActive
+            && tabProgress == CGFloat(index(of: .claude))
+    }
+
+    func claudeContentDidChange() {
+        motion.contentDidChange(claude.session)
+    }
+
+    func captureChipDidChange() {
+        updateRunningDot()
     }
 
     // MARK: Debug

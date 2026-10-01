@@ -3,4 +3,6 @@
 protocol WindowRouter: AnyObject {
     func showSettings()
     func showWelcome()
+    /// Draw to ask without Screen Recording: why it's needed, and the way to allow it.
+    func showCaptureOnboarding()
 }
