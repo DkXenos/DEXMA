@@ -20,6 +20,12 @@ struct NotchShape: Shape {
         }
     }
 
+    /// The bottom corner radius `path(in:)` actually draws (clamped to the size).
+    var drawnBottomRadius: CGFloat {
+        let ear = min(max(0, earRadius), max(0, height) / 2)
+        return max(0, min(bottomRadius, max(0, width) / 2, max(0, height) - ear))
+    }
+
     /// Scaled about the top centre, for squash & stretch. 1 × 1 returns the shape unchanged.
     func scaled(by scale: CGSize) -> NotchShape {
         guard scale != CGSize(width: 1, height: 1) else { return self }

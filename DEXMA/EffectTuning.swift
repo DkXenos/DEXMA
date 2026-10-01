@@ -27,6 +27,10 @@ nonisolated struct EffectTuning: Equatable {
     /// RGB split at the edge at full speed. Keep ≤ 1.5: felt more than seen.
     var aberration: CGFloat = 1.5
 
+    /// How far past the silhouette the screen behind it is bent (Liquid Glass ring, macOS 26),
+    /// at full speed mid-way. 0 turns the backdrop bending off.
+    var backdropRing: CGFloat = 16
+
     // MARK: Light
     /// Peak opacity of the specular line that sweeps down the rim as the panel opens.
     var highlight: CGFloat = 0.6
@@ -50,6 +54,7 @@ nonisolated struct EffectTuning: Equatable {
         t.wobble *= k
         t.anticipation *= k
         t.refraction *= k
+        t.backdropRing *= k
         t.aberration *= k
         t.highlight *= k
         t.glow *= k
@@ -59,5 +64,6 @@ nonisolated struct EffectTuning: Equatable {
     /// False when scaled to nothing: the motion layer and its shaders are skipped entirely.
     var isVisible: Bool {
         maxStretch > 0 || refraction > 0 || aberration > 0 || highlight > 0 || glow > 0
+            || backdropRing > 0
     }
 }

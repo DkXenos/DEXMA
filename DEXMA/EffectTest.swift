@@ -9,6 +9,9 @@ import SwiftTerm
 enum EffectTest {
     static func run(panel: NSPanel, controller: PanelController, session: ShellSession, dir: URL) {
         Task { @MainActor in
+            // The Mac may be in use while this runs: another app taking focus must not close
+            // the panel mid-test (focus handling itself is covered by -selftest).
+            controller.closesOnFocusLoss = false
             session.terminalView.process.send(data: ArraySlice(Array("clear; seq 1 80; echo effect test\r".utf8)))
             try? await Task.sleep(for: .seconds(1.5))
             controller.open()
@@ -162,10 +165,10 @@ enum EffectTest {
             let ok = controller.state == (expectOpen ? .open : .closed)
                 && controller.progress == (expectOpen ? 1 : 0)
                 && !controller.effects.isActive
+                && controller.backdrop?.isShowing != true
                 && session.container.isHidden == !expectOpen
-                && panel.isKeyWindow == expectOpen
                 && (!expectOpen || panel.firstResponder === session.terminalView)
-            print("[effect] \(ok ? "OK  " : "FAIL") \(label): state=\(controller.state) progress=\(controller.progress) motion=\(controller.effects.isActive) hidden=\(session.container.isHidden) key=\(panel.isKeyWindow)")
+            print("[effect] \(ok ? "OK  " : "FAIL") \(label): state=\(controller.state) progress=\(controller.progress) motion=\(controller.effects.isActive) glass=\(controller.backdrop?.isShowing == true) hidden=\(session.container.isHidden) key=\(panel.isKeyWindow)")
         }
         func swipe(to delta: CGFloat, steps: Int, release velocity: CGFloat) async {
             controller.beginInteraction()
@@ -218,6 +221,7 @@ enum EffectTest {
             ("closing-96", 0.96, .init(stretch: 0.03, bulge: 0, energy: 1)),
             ("opening-15", 0.15, .init(stretch: 0.07, bulge: 0.02, energy: 1)),
         ]
+        print("[effect] backdrop lens available: \(controller.backdrop?.isAvailable == true)")
         print("[effect] poses: active \(controller.effects.isActive), snapshot \(controller.effects.snapshot.map { "\($0.image.width)x\($0.image.height)" } ?? "nil")")
         for (name, progress, effect) in poses {
             controller.debugPose(progress: progress, effect: effect)

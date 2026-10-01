@@ -46,7 +46,10 @@ like a third-party app.
   stretch/wobble, energy, anticipation bulge; stepped by `SpringDriver.onFrame`),
   `LiquidMotionLayer` + `LiquidEffects.metal` (SwiftUI `distortionEffect` stretch and
   `layerEffect` lens/aberration/light over the terminal snapshot), `TerminalSnapshot`
-  (pixel-exact picture of the live terminal), `Haptics` (`NSHapticFeedbackManager` ticks).
+  (pixel-exact picture of the live terminal), `Haptics` (`NSHapticFeedbackManager` ticks),
+  `BackdropLens` (macOS 26: a clear `NSGlassEffectView` ring behind the silhouette, so the
+  window server bends the desktop/apps behind the notch — no capture, no permission) inside
+  `PanelContentView` (the panel's flipped content view: glass below, `NSHostingView` above).
 - `DebugSnapshot` — DEBUG-only `-selftest` / `-snapshot <dir>` / `-forcePill` hooks;
   `EffectTest` — DEBUG-only `-effecttest <dir>` (see *Debug snapshots*).
 
@@ -69,6 +72,11 @@ like a third-party app.
   SwiftUI update. Snapshots are taken while idle (0.5 s after the last output/input/scroll),
   so `open`/`close` normally do no capture. Reduce Motion or intensity Off → the effect is
   skipped entirely and the old path runs unchanged.
+- Screen bending (macOS 26): `PanelController.updateBackdrop` sizes the `BackdropLens` glass
+  each effect frame — silhouette + `EffectTuning.backdropRing` × (energy peaking mid-way, or
+  the anticipation swell), extended above the window so only its bottom corners show. Under
+  ¼ pt it's hidden (not rendered), so at rest nothing changes. Warmed at launch behind the
+  closed notch. The user chose this over ScreenCaptureKit (2026-10-01).
 
 ## Rules
 - **Performance first.** No view recreation on open/close. No main-thread work during
@@ -222,6 +230,12 @@ update Progress below.
   CLI, so stream latency/pacing couldn't be measured (the user's rule: unmeasured → don't ship).
   Unverified (needs the user on hardware): the feel, haptics (NSHapticFeedbackManager from a
   non-activating agent panel), Reduce Motion (same code path as intensity Off), macOS 14.
+- **Screen bending (Liquid Glass ring):** added after the user asked for the backdrop to warp.
+  Verified: rest still pixel-identical (glass hidden), swap-back clean, interaction end states
+  OK with the glass hidden afterwards, builds with `MACOSX_DEPLOYMENT_TARGET=14.0`, main-thread
+  p95 ≈ 3.5 ms/frame (was 2.5: moving the glass view), no frame over 10.8 ms. Not verifiable
+  here: the refraction itself and its window-server cost — an own-window capture has no
+  backdrop, so the ring shows as dark grey there.
 
 ## Debug snapshots
 Screen Recording isn't granted to the CLI, but an app can render its own window. Debug builds
@@ -233,7 +247,9 @@ frontmost app at each step) and `-snapshot <dir>`: they type `ls /` into the she
 panel (`CGWindowListCreateImage` via `dlsym`: deprecated, but an app may capture its own
 window without Screen Recording): snapshot fidelity, motion layer vs live at rest, a real
 swap-back frame by frame, frame pacing with the effect on/off, gesture/interruption end
-states, and posed PNGs (composite them over a grey background to see the rim light). Always
+states, and posed PNGs (composite them over a grey background to see the rim light). It turns
+off close-on-focus-loss, because the user's Mac is usually in use while it runs (another app
+taking focus closed the panel mid-test and looked like a bug). Always
 check the build succeeded first — a failed build leaves the old binary, which ignores the flag
 and never quits (wrap runs in a watchdog).
 

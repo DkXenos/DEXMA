@@ -34,6 +34,8 @@ final class PanelController {
 
     /// The liquid effect's per-frame state; the content view renders it.
     let effects = MotionEffects()
+    /// Bends the screen around the silhouette while it moves (macOS 26).
+    @ObservationIgnored var backdrop: BackdropLens?
 
     private let panel: NotchPanel
     private let session: ShellSession
@@ -229,6 +231,7 @@ final class PanelController {
     func debugPose(progress value: CGFloat, effect: MotionEffects.Frame) {
         progress = value
         effects.debugSet(effect)
+        updateBackdrop()
     }
 
     var debugDriver: SpringDriver { driver }
@@ -263,13 +266,33 @@ final class PanelController {
         if !moving, !driver.isSpringing, !driver.isHeld, !debugHoldsMotion {
             endMotion()
         }
+        updateBackdrop()
         return moving
+    }
+
+    /// The glass ring follows the silhouette as drawn this frame, as wide as the motion is
+    /// strong (speed, peaking mid-way, or the anticipation swell); gone at rest.
+    private func updateBackdrop() {
+        guard let backdrop else { return }
+        let frame = effects.frame
+        let tuning = effects.tuning
+        let base = geometry.shape(at: progress)
+        let shape = base.scaled(by: frame.scale(width: base.width, height: base.height))
+        let p = min(max(progress, 0), 1)
+        let swell = tuning.anticipation > 0 ? frame.bulge / tuning.anticipation : 0
+        let strength = min(max(frame.energy * (0.4 + 0.6 * sin(.pi * p)), swell), 1)
+        backdrop.update(
+            silhouette: CGRect(x: shape.centerX - shape.width / 2, y: 0,
+                               width: shape.width, height: shape.height),
+            radius: shape.drawnBottomRadius,
+            ring: effects.isActive ? tuning.backdropRing * strength : 0)
     }
 
     /// Everything is at rest and every effect is exactly zero: the live terminal comes back
     /// in the same frame the motion layer goes (both are SwiftUI state in one update).
     private func endMotion() {
         effects.end()
+        updateBackdrop()  // Hides the glass.
         if state == .open {
             session.restartCaretBlink()
             // Taken while closed (no caret): retake it with the caret before the next close.
@@ -326,6 +349,9 @@ final class PanelController {
     /// notch) so its shaders are compiled before the first real open.
     func warmUpEffects() {
         guard !effects.isActive, state == .closed, !driver.isAnimating else { return }
+        let notch = geometry.shape(at: 0)
+        backdrop?.warmUp(behind: CGRect(x: notch.centerX - notch.width / 2, y: 0,
+                                        width: notch.width, height: notch.height))
         effects.begin(with: nil)
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in
             guard let self, self.effects.isActive, !self.driver.isAnimating, !self.driver.isHeld else { return }

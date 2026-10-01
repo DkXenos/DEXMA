@@ -37,7 +37,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // The panel overlaps the notch and menu bar on purpose; don't let AppKit safe-area
         // insets feed back into SwiftUI layout.
         hostingView.safeAreaRegions = []
-        panel.contentView = hostingView
+        // The backdrop lens (Liquid Glass, while moving) sits under the SwiftUI content.
+        let content = PanelContentView(frame: CGRect(origin: .zero, size: geometry.panelFrame.size))
+        hostingView.frame = content.bounds
+        hostingView.autoresizingMask = [.width, .height]
+        content.addSubview(hostingView)
+        controller.backdrop = BackdropLens(in: content)
+        panel.contentView = content
         panel.acceptsMouseMovedEvents = true  // For the hover monitor while peeking.
         // Pre-warm: the panel stays on screen from launch. Closed, it hides under the notch.
         panel.orderFrontRegardless()

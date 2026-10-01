@@ -25,9 +25,7 @@ struct LiquidMotionLayer: View {
         let p = min(max(progress, 0), 1)
         // Lens and light peak mid-way and scale with speed; all zero at rest (energy = 0).
         let midway = sin(.pi * p)
-        // The corner radius NotchShape actually draws.
-        let ear = min(max(0, shape.earRadius), shape.height / 2)
-        let radius = max(0, min(shape.bottomRadius, shape.width / 2, shape.height - ear))
+        let radius = shape.drawnBottomRadius
 
         ZStack(alignment: .topLeading) {
             // SwiftUI skips a layer effect whose content is all transparent (before the text

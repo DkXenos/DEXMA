@@ -18,7 +18,9 @@ app you were using. When closed, DEXMA is invisible.
   of the screen instead.
 - **Liquid motion:** while opening and closing, the notch moves like a liquid lens. It
   stretches with the motion and wobbles slightly when it lands. Its rim bends the text beneath
-  it, and a soft highlight sweeps along it. The effect only exists while the notch moves; at
+  it, and a soft highlight sweeps along it. On macOS 26, the screen just around the notch
+  (desktop, menu bar, windows) bends through a ring of Liquid Glass, with no Screen Recording
+  permission needed. The effect only exists while the notch moves; at
   rest nothing changes and text stays crisp. The swipe gives Force Touch ticks when it passes
   the point of no return and when it lands. Set the strength in
   *Settings → Animation → Effect intensity*; Off, or Reduce Motion, turns the lens effect off.
