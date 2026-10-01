@@ -297,7 +297,10 @@ final class PanelController {
         let strength = min(max(frame.energy * (0.4 + 0.6 * sin(.pi * p)), swell), 1)
         let velocity = driver.screenVelocity
         // Smooth sign: a slow overshoot doesn't flip the warp abruptly.
-        let direction = swell > frame.energy ? 1 : CGFloat(tanh(Double(velocity) / 0.4))
+        var direction = swell > frame.energy ? 1 : CGFloat(tanh(Double(velocity) / 0.4))
+        #if DEBUG
+        if debugHoldsMotion { direction = 1 }  // Frozen poses have no velocity: show an opening.
+        #endif
         return ScreenBender.Motion(
             silhouette: CGRect(x: shape.centerX - shape.width / 2, y: 0,
                                width: shape.width, height: shape.height),

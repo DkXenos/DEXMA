@@ -47,9 +47,12 @@ like a third-party app.
   `LiquidMotionLayer` + `LiquidEffects.metal` (SwiftUI `distortionEffect` stretch and
   `layerEffect` lens/aberration/light over the terminal snapshot), `TerminalSnapshot`
   (pixel-exact picture of the live terminal), `Haptics` (`NSHapticFeedbackManager` ticks),
-  `BackdropLens` (macOS 26: a clear `NSGlassEffectView` ring behind the silhouette, so the
-  window server bends the desktop/apps behind the notch — no capture, no permission) inside
-  `PanelContentView` (the panel's flipped content view: glass below, `NSHostingView` above).
+  `ScreenBender` (bends the real screen around the notch: owns `ScreenCapture` — a
+  ScreenCaptureKit stream of the panel's screen rect, DEXMA excluded, run only around intent —
+  and `ScreenWarpView` + `ScreenWarp.metal`, a CAMetalLayer below the silhouette presented in
+  the CA transaction; plus the pointer lens; falls back to `BackdropLens`, a clear
+  `NSGlassEffectView` ring, without Screen Recording), `ScreenRecordingPermission`, all inside
+  `PanelContentView` (the panel's flipped content view: warp/glass below, `NSHostingView` above).
 - `DebugSnapshot` — DEBUG-only `-selftest` / `-snapshot <dir>` / `-forcePill` hooks;
   `EffectTest` — DEBUG-only `-effecttest <dir>` (see *Debug snapshots*).
 
@@ -72,11 +75,20 @@ like a third-party app.
   SwiftUI update. Snapshots are taken while idle (0.5 s after the last output/input/scroll),
   so `open`/`close` normally do no capture. Reduce Motion or intensity Off → the effect is
   skipped entirely and the old path runs unchanged.
-- Screen bending (macOS 26): `PanelController.updateBackdrop` sizes the `BackdropLens` glass
-  each effect frame — silhouette + `EffectTuning.backdropRing` × (energy peaking mid-way, or
-  the anticipation swell), extended above the window so only its bottom corners show. Under
-  ¼ pt it's hidden (not rendered), so at rest nothing changes. Warmed at launch behind the
-  closed notch. The user chose this over ScreenCaptureKit (2026-10-01).
+- Screen bending: each effect frame `PanelController.currentMotion()` (silhouette, strength
+  = energy peaking mid-way or the anticipation swell, direction from the velocity's sign) goes
+  to `ScreenBender.step`. With Screen Recording (user's choice, 2026-10-01: Camera-Control
+  colour warp) it redraws the captured screen pushed out (growing) / pulled in (shrinking)
+  around the silhouette with an RGB split, transparent where the bend is < ½ pt, so it meets
+  the real screen seamlessly; the pointer lens magnifies around the cursor near the notch
+  (hover monitor → `pointerMoved`, keeps the display link awake). Capture starts on intent
+  (pointer within `hoverReach`, fingers armed in the edge zone, open/close) and stops 3 s
+  after the last use; macOS shows its recording indicator meanwhile. Without the permission:
+  the Liquid Glass ring (narrow, clamped to the window). `CGPreflightScreenCaptureAccess`
+  costs ~10 ms: only ever called off the main thread (cached).
+- Overshoot past fully open eases into the window's room (`NotchGeometry.overshoot`, tanh) and
+  squash/stretch is clamped to `silhouetteLimit()`: a fast flick used to run the silhouette
+  past the window's bottom edge (a hard straight cut). Identical at progress ≤ 1.
 
 ## Rules
 - **Performance first.** No view recreation on open/close. No main-thread work during
@@ -237,6 +249,14 @@ update Progress below.
   here: the refraction itself and its window-server cost — an own-window capture has no
   backdrop, so the ring shows as dark grey there.
 
+- **Screen warp (ScreenCaptureKit):** measured with `-warptest` (Screen Recording granted to
+  DEXMA by the user; Debug and Release share the grant — same bundle id and signature):
+  stream start → first frame ≈ 80–90 ms (first after launch 190–450 ms); a hotkey open with
+  no stream running gets the warp 170 ms in (gesture/hover start it earlier); pacing with the
+  warp 0 late frames over 6 cycles, main-thread p95 3.3 ms; zero-bend warp layer vs the real
+  screen: identical raw pixels (seamless). Posed captures show the menu bar items next to the
+  notch pushed out and colour-split. Unverified: the feel of the pointer lens.
+
 ## Debug snapshots
 Screen Recording isn't granted to the CLI, but an app can render its own window. Debug builds
 accept `-selftest` (open/close via the controller, printing key window, first responder and
@@ -249,7 +269,10 @@ window without Screen Recording): snapshot fidelity, motion layer vs live at res
 swap-back frame by frame, frame pacing with the effect on/off, gesture/interruption end
 states, and posed PNGs (composite them over a grey background to see the rim light). It turns
 off close-on-focus-loss, because the user's Mac is usually in use while it runs (another app
-taking focus closed the panel mid-test and looked like a bug). Always
+taking focus closed the panel mid-test and looked like a bug). `-warptest <dir>` measures the
+screen warp; it needs DEXMA's Screen Recording grant, so launch it with
+`open -n -W <Debug DEXMA.app> --args -warptest <dir>` (a shell launch inherits the terminal's
+TCC) and read `<dir>/report.txt` + PNGs of the real screen. Always
 check the build succeeded first — a failed build leaves the old binary, which ignores the flag
 and never quits (wrap runs in a watchdog).
 

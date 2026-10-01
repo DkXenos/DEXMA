@@ -18,9 +18,12 @@ app you were using. When closed, DEXMA is invisible.
   of the screen instead.
 - **Liquid motion:** while opening and closing, the notch moves like a liquid lens. It
   stretches with the motion and wobbles slightly when it lands. Its rim bends the text beneath
-  it, and a soft highlight sweeps along it. On macOS 26, the screen just around the notch
-  (desktop, menu bar, windows) bends through a ring of Liquid Glass, with no Screen Recording
-  permission needed. The effect only exists while the notch moves; at
+  it, and a soft highlight sweeps along it. If you allow Screen Recording, the real screen
+  around the notch warps too, like the screen around the iPhone's Camera Control. Whatever
+  is behind it gets pushed out as the notch grows and pulled in as it shrinks, with a colour
+  split, and a small lens follows the pointer near the notch. Without the permission (on
+  macOS 26), a thin Liquid Glass edge bends the screen instead. The effect only exists while
+  the notch moves; at
   rest nothing changes and text stays crisp. The swipe gives Force Touch ticks when it passes
   the point of no return and when it lands. Set the strength in
   *Settings → Animation → Effect intensity*; Off, or Reduce Motion, turns the lens effect off.
@@ -74,6 +77,7 @@ permissions at all.
 | Permission | Why | Without it |
 | --- | --- | --- |
 | **Accessibility** (optional) | A scroll-only event tap stops the window under your pointer from scrolling while you swipe the terminal open. It sees scroll events only, never keystrokes. | Everything works, but the page under your pointer may scroll a little during a swipe. |
+| **Screen Recording** (optional) | Bends the real screen around the notch. DEXMA captures only the area under its panel, never saves it, and only while the notch moves or the pointer is near it. macOS shows its recording indicator during that time. | A Liquid Glass edge bends the screen instead (macOS 26), or nothing on older macOS. |
 | **Login Items** (optional) | *Launch at Login*, via `SMAppService`. macOS may ask you to approve it in System Settings → General → Login Items. | Start DEXMA yourself. |
 | **Files and folders, etc.** (on demand) | Commands you run inside DEXMA's shell count as DEXMA to macOS. So when `ls ~/Desktop` touches a protected folder, macOS asks whether *DEXMA* may access it. | That command gets "Operation not permitted". |
 
