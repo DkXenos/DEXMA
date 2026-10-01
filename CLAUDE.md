@@ -13,48 +13,114 @@ like a third-party app.
   running a persistent zsh, spawned at app launch and never killed when the panel closes.
 - **Close:** swipe up, Esc, or hotkey. Focus returns to the previously active app.
 
-## Architecture — keep these separated
+## Architecture — feature-based MVVM
+Sources live in `DEXMA/`, a synchronized folder: adding, moving or renaming files needs no
+project edit. One type per file; nothing sits directly in `DEXMA/`.
+
+```
+DEXMA/
+├── App/            entry point, lifecycle, composition root
+├── Core/           shared, UI-free building blocks: Animation, Geometry, Settings,
+│                   Permissions, Navigation, System, Extensions
+├── Features/<F>/   Models/ · ViewModels/ · Views/ · Services/ (· Shaders/) — only the ones F needs
+├── Resources/      Assets.xcassets
+└── Debug/          DEBUG-only harnesses, Support/ for their shared helpers
+DEXMATests/         Core/ and Features/<F>/, mirroring the app
+```
+
+Layers — keep them separated:
+- **Models:** values and pure logic (`nonisolated` when used off the main actor or by
+  nonisolated tests). No views, no side effects beyond their own storage.
+- **ViewModels:** `@Observable` classes views read and call (or an `NSObject` whose `@objc`
+  actions AppKit menu items target). They use services and models; windows open through
+  `WindowRouter`, never directly.
+- **Views:** SwiftUI views, AppKit views and window controllers. Everything comes from their
+  view model (or plain values from the parent view): no `UserDefaults`, permissions,
+  `LoginItem` or other services. Window controllers tell their view model when the window
+  opens and closes.
+- **Services:** system and framework work: processes, event taps, multitouch,
+  ScreenCaptureKit, Carbon, the effect's per-frame orchestration.
+- Features use `Core` freely and other features only through an explicit API (a model, a
+  service, a protocol like `SwipeTarget`). `AppCoordinator` is the only type that knows every
+  feature. New code goes into the feature it belongs to, in the folder for its layer;
+  UI-free and shared → `Core/`.
+- Naming: `Notch*` types (`NotchPanel`, `NotchShape`, `NotchGeometry`, `NotchContentView`,
+  `NotchViewModel`) are named after the hardware notch, not the app — they are not leftovers
+  of the old "NotchTerm" name.
+
+**App**
 - `main.swift` — pure AppKit entry (no SwiftUI `App`): no default window or Settings scene.
   Runs `DefaultsMigration` (settings from the old `com.jasontio.terminal-application`
   domain) before anything reads UserDefaults.
-- Naming: `Notch*` types (`NotchPanel`, `NotchShape`, `NotchGeometry`, `NotchContentView`)
-  are named after the hardware notch, not the app — they are not leftovers of the old
-  "NotchTerm" name.
-- `AppDelegate` — owns everything; builds and wires all objects at launch; applies
-  `AppSettings` live; picks the screen (`DisplayChoice`).
-- `NotchGeometry` — notch rect from `NSScreen` (`auxiliaryTopLeftArea`/`auxiliaryTopRightArea`,
-  `safeAreaInsets`); fallback size for non-notch screens; the panel's window frame.
-- `NotchPanel` — borderless non-activating `NSPanel` above the menu bar; `canJoinAllSpaces`
-  + `fullScreenAuxiliary` + `stationary`; transparent. Ordered in at launch, never ordered out.
-- `NotchShape` — SwiftUI `Shape` with animatable width/height/bottom radius/ear radius.
-- `PanelController` — single source of truth: `progress` (0 = notch, 1 = expanded) + state
-  (closed/peek/open). Hotkey, gesture, hover and the menu bar item all drive it; owns focus.
-- `SpringDriver` — advances `progress` with SwiftUI's `Spring` on the panel's `CADisplayLink`.
-- `HotKey` — Carbon `RegisterEventHotKey` wrapper (needs no permissions).
-- `NotchContentView` — SwiftUI root inside the panel; derives all geometry from `progress`.
-- `ShellSession` — ONE long-lived `LocalProcessTerminalView` + zsh (respawned on exit);
-  `TerminalContainerView` masks it to the shape. `TerminalHost` — the `NSViewRepresentable`
-  that hands that same view to SwiftUI. Never recreated.
-- `GestureRecognizer` (pure, unit-tested) + `GestureEngine` (OpenMultitouchSupport frames →
-  recognizer → controller). `ScrollBlocker`/`ScrollGate` — `CGEventTap` on its own thread
-  swallowing scroll during a swipe. `AccessibilityPermission` — live AX trust.
-- `HoverMonitor` — pointer over the notch → peek. `AppSettings`/`KeyCombo` — UserDefaults.
-- UI: `StatusItemController` (menu bar item; also `MainMenu`), `SettingsWindow`
-  (`SettingsView`, `TrackpadPreview`, `ShortcutRecorder`), `Onboarding`, `LoginItem`.
-- Liquid effect (only while moving): `EffectTuning` (every constant + `scaled(by:)` for the
-  Settings "Effect intensity" slider), `MotionEffects` (@Observable per-frame state: jelly
-  stretch/wobble, energy, anticipation bulge; stepped by `SpringDriver.onFrame`),
-  `LiquidMotionLayer` + `LiquidEffects.metal` (SwiftUI `distortionEffect` stretch and
-  `layerEffect` lens/aberration/light over the terminal snapshot), `TerminalSnapshot`
-  (pixel-exact picture of the live terminal), `Haptics` (`NSHapticFeedbackManager` ticks),
-  `ScreenBender` (bends the real screen around the notch: owns `ScreenCapture` — a
-  ScreenCaptureKit stream of the panel's screen rect, DEXMA excluded, run only around intent —
-  and `ScreenWarpView` + `ScreenWarp.metal`, a CAMetalLayer below the silhouette presented in
-  the CA transaction; plus the pointer lens; falls back to `BackdropLens`, a clear
-  `NSGlassEffectView` ring, without Screen Recording), `ScreenRecordingPermission`, all inside
-  `PanelContentView` (the panel's flipped content view: warp/glass below, `NSHostingView` above).
-- `DebugSnapshot` — DEBUG-only `-selftest` / `-snapshot <dir>` / `-forcePill` hooks;
-  `EffectTest` — DEBUG-only `-effecttest <dir>` (see *Debug snapshots*).
+- `AppDelegate` — lifecycle only; forwards launch and screen changes to `AppCoordinator`.
+- `AppCoordinator` — composition root: builds and wires every feature at launch (the order
+  pre-warms everything), applies `AppSettings` live (`applySettings`), opens Settings and
+  Welcome (`WindowRouter`).
+
+**Core**
+- `Animation/SpringDriver` — advances `progress` with SwiftUI's `Spring` on the panel's
+  `CADisplayLink`.
+- `Geometry/NotchGeometry` — notch rect from `NSScreen` (`auxiliaryTopLeftArea`/
+  `auxiliaryTopRightArea`, `safeAreaInsets`); fallback pill for non-notch screens; the
+  panel's window frame, terminal frame, hover zone and `shape(at:)`. `NotchShape` — SwiftUI
+  `Shape` with animatable width/height/bottom radius/ear radius. `Interpolation` — `lerp`,
+  `smoothstep`.
+- `Settings/` — `AppSettings` (@Observable, UserDefaults, `onChange` after every edit) with
+  `KeyCombo` and `DisplayChoice`; `DefaultsMigration`.
+- `Permissions/` — `AccessibilityPermission`, `ScreenRecordingPermission`: live, polled only
+  while a window shows them.
+- `Navigation/WindowRouter` — opens DEXMA's windows; `AppCoordinator` implements it.
+- `System/LoginItem` (SMAppService). `Extensions/` — `Logger(category:)`, `NSScreen.displayID`.
+
+**Features**
+- `Notch/` — the panel. `NotchViewModel`: single source of truth, `progress` (0 = notch,
+  1 = expanded) + `PanelState` (closed/peek/open); hotkey, gesture, hover and the menu bar
+  item all drive it; owns the panel window and focus; derives the silhouette, content
+  opacity and hover zone for the view. Views: `NotchPanel` — borderless non-activating
+  `NSPanel` above the menu bar; `canJoinAllSpaces` + `fullScreenAuxiliary` + `stationary`;
+  transparent; ordered in at launch, never ordered out. `PanelContentView` — the panel's
+  flipped content view (warp/glass below, `NSHostingView` above). `NotchContentView` —
+  SwiftUI root, everything from the view model. Services: `NotchGeometryProvider` (screen
+  choice, size clamp, `-forcePill`), `HoverMonitor` (pointer over the notch → peek),
+  `FocusHandoff` (keyboard back to the previous app).
+- `Terminal/` — `ShellSession`: ONE long-lived `LocalProcessTerminalView` + zsh (respawned
+  on exit) and its snapshot cache. Views: `ShellTerminalView` (reports output),
+  `TerminalContainerView` (fixed frame, masked to the shape), `TerminalHost` (the
+  `NSViewRepresentable` that hands that same view to SwiftUI). Never recreated. Model:
+  `TerminalSnapshot` (pixel-exact picture of the live terminal).
+- `Gestures/` — Models: `GestureRecognizer` (pure, unit-tested), `TouchPoint`,
+  `GestureParameters`, `GestureEvent`. Services: `GestureEngine` (OpenMultitouchSupport
+  frames → recognizer → `SwipeTarget`, i.e. `NotchViewModel`), `ScrollBlocker`/`ScrollGate`
+  (`CGEventTap` on its own thread swallowing scroll during a swipe), `Haptics`
+  (`NSHapticFeedbackManager` ticks).
+- `LiquidMotion/` (only while moving) — Models: `EffectTuning` (every constant +
+  `scaled(by:)` for the Settings "Effect intensity" slider), `MotionEffects` (@Observable
+  per-frame state: jelly stretch/wobble, energy, anticipation bulge), `Silhouette` (the shape
+  at a progress with the frame's squash and stretch — the one place it's computed). Service:
+  `LiquidMotionEngine` (the effect around every motion: snapshot swap, per-frame step, idle
+  snapshots, screen bend). View: `LiquidMotionLayer` + `Shaders/LiquidEffects.metal` (SwiftUI
+  `distortionEffect` stretch and `layerEffect` lens/aberration/light over the terminal
+  snapshot).
+- `ScreenWarp/` — `ScreenBender` bends the real screen around the notch: owns
+  `ScreenCapture` (a ScreenCaptureKit stream of the panel's screen rect, DEXMA excluded, run
+  only around intent) and `ScreenWarpView` + `Shaders/ScreenWarp.metal` (a CAMetalLayer below
+  the silhouette presented in the CA transaction); plus the pointer lens; falls back to
+  `BackdropLens`, a clear `NSGlassEffectView` ring, without Screen Recording. Models:
+  `SilhouetteMotion` (what it bends around), `WarpUniforms` (matches the shader).
+- `HotKey/` — `HotKey` (Carbon `RegisterEventHotKey` wrapper, needs no permissions),
+  `HotKeyRegistrar` (keeps the settings' combo registered; paused while recording one).
+- `MenuBar/` — `MenuBarViewModel` (titles, state, `@objc` actions), `StatusItemController`
+  (the menu bar item), `MainMenu` (About/Settings/Quit, Edit, Window).
+- `Settings/` — `SettingsViewModel`, `TrackpadPreviewViewModel`; Views:
+  `SettingsWindowController`, `SettingsView`, `TrackpadPreview`, `ShortcutRecorder`; Model:
+  `ShortcutInput` (key press → shortcut, pure).
+- `Onboarding/` — `OnboardingViewModel`, `OnboardingRecord` (the `didShowOnboarding` flag),
+  `OnboardingView`, `OnboardingWindowController`.
+
+**Debug** (DEBUG only) — `DebugHarness` dispatches the launch flags to `SelfTest`
+(`-selftest`), `SnapshotTest` (`-snapshot <dir>`), `EffectTest` (`-effecttest <dir>`) and
+`WarpTest` (`-warptest <dir>`, `-captureidle <s>`); `Support/` holds `DebugImages`,
+`FramePacingProbe` and `NotchViewModel.waitForRest()` (see *Debug snapshots*).
 
 ## Animation model
 - `progress` is always the on-screen (presentation) value. `SpringDriver` steps it each
@@ -64,10 +130,11 @@ like a third-party app.
 - Views derive every size/radius from `progress`; no implicit or explicit SwiftUI
   animations on anything derived from it.
 - The display link is created once at launch and paused while the spring is at rest.
-- Liquid effect: `SpringDriver.onFrame` steps `MotionEffects` on the same display link and
-  keeps it running until every effect value is *exactly* zero (then the link pauses). The
-  black silhouette is always the same vector `shape.fill` — squash/stretch/bulge only scale
-  `NotchShape`'s width/height about the top centre (`Frame.scale`, exactly 1 × 1 at rest).
+- Liquid effect: `SpringDriver.onFrame` → `LiquidMotionEngine.step` steps `MotionEffects` on
+  the same display link and keeps it running until every effect value is *exactly* zero (then
+  the link pauses). The black silhouette is always the same vector `shape.fill` —
+  squash/stretch/bulge only scale `NotchShape`'s width/height about the top centre
+  (`Frame.scale`, through `Silhouette`; exactly 1 × 1 at rest).
   Shaders touch only the content: while moving, `LiquidMotionLayer` shows a `TerminalSnapshot`
   (the live terminal's mask opacity goes to 0 — never `isHidden`, which would drop first
   responder), bent by the shaders and clipped to the silhouette. At rest the motion layer is
@@ -75,9 +142,10 @@ like a third-party app.
   SwiftUI update. Snapshots are taken while idle (0.5 s after the last output/input/scroll),
   so `open`/`close` normally do no capture. Reduce Motion or intensity Off → the effect is
   skipped entirely and the old path runs unchanged.
-- Screen bending: each effect frame `PanelController.currentMotion()` (silhouette, strength
-  = energy peaking mid-way or the anticipation swell, direction from the velocity's sign) goes
-  to `ScreenBender.step`. With Screen Recording (user's choice, 2026-10-01: Camera-Control
+- Screen bending: each effect frame `LiquidMotionEngine` hands a `SilhouetteMotion`
+  (silhouette, strength = energy peaking mid-way or the anticipation swell, direction from
+  the velocity's sign) to `ScreenBender.step`. With Screen Recording (user's choice,
+  2026-10-01: Camera-Control
   colour warp) it redraws the captured screen pushed out (growing) / pulled in (shrinking)
   around the silhouette with an RGB split, transparent where the bend is < ½ pt, so it meets
   the real screen seamlessly; the pointer lens magnifies around the cursor near the notch
@@ -109,13 +177,16 @@ like a third-party app.
   `xcodebuild -project DEXMA.xcodeproj -scheme DEXMA -configuration Debug -destination 'platform=macOS,arch=arm64' -skipPackagePluginValidation -skipMacroValidation build 2>&1 | grep -E 'warning:|error:|BUILD (SUCCEEDED|FAILED)'`
   (While the project's deployment target is above 14.0, also build once with
   `MACOSX_DEPLOYMENT_TARGET=14.0` appended to catch availability errors.)
-- **Don't edit `project.pbxproj`** unless absolutely necessary. Adding/removing Swift files
-  needs no project edit (the target uses a synchronized folder). For entitlements,
+- **Don't edit `project.pbxproj`** unless absolutely necessary. Adding, moving or removing
+  Swift files needs no project edit (the targets use synchronized folders). For entitlements,
   Info.plist keys, build settings or packages: tell the user, they change it in Xcode.
   (Exception on record: the user OK'd Claude's one pbxproj edit for packages/settings/name.)
-- Unit tests: `xcodebuild test … -only-testing:DEXMATests` (Swift Testing).
-- Small, focused files. Comment only the non-obvious parts (especially gesture math and
-  window levels).
+- Unit tests: `xcodebuild test … -only-testing:DEXMATests` (Swift Testing), in the folder that
+  mirrors the code they test.
+- Small, focused files: one type each, in its feature's layer folder (see *Architecture*).
+  Comment only the non-obvious parts (especially gesture math and window levels).
+- **Commits** are authored by the user's git identity (DkXenos), with no `Co-Authored-By:
+  Claude` line (the user's request, 2026-10-01).
 - Work in phases and tick them below. (Phases 2–8 were run back to back at the user's
   request; new work: ask whether to stop between steps.)
 
@@ -131,6 +202,7 @@ like a third-party app.
 - [x] 9. Rename NotchTerm / terminal-application → DEXMA (branch `refactor/dexma`).
 - [x] 10. Liquid lens effect while opening/closing + haptics (branch `feature/distortion`,
   not merged: the user tests the feel first).
+- [x] 11. Feature-based MVVM refactor (branch `refactor/mvvm`, from `feature/distortion`).
 
 The user asked (2026-10-01) to run phases 2–8 without stopping between them: per phase, read
 package sources, build to 0 errors/0 warnings, launch-check, `git commit -m "Phase N: …"`,
@@ -182,7 +254,7 @@ update Progress below.
   (armed in the edge zone, or tracking), plus momentum for 0.6 s after a completed swipe;
   re-enables itself if macOS times the tap out. Without Accessibility it polls
   `AXIsProcessTrusted` every 1.5 s and starts by itself when granted (no relaunch).
-  `Onboarding.swift`: first-run window (gesture + hotkey how-to, why Accessibility, button that
+  `OnboardingView`: first-run window (gesture + hotkey how-to, why Accessibility, button that
   prompts and opens the Privacy_Accessibility pane, live "Granted" status). Only Done/close
   marks it seen (`didShowOnboarding`), not quitting. Verified: tap created when trusted, waits
   when not (log: `Launched. Multitouch gestures: on; scroll blocking: …`), onboarding shows on
@@ -194,7 +266,7 @@ update Progress below.
   plain `defaults` reads the stale sandbox container from the old template — pass the plist path.
   zsh's `log` is a builtin: use `/usr/bin/log show --predicate 'subsystem == "<bundle id>"'`.
   `cacheDisplay` can't render SwiftUI text, so `-snapshot` only covers the panel.
-- **Phase 7:** `AppSettings` (@Observable, UserDefaults, `onChange` → `AppDelegate.applySettings`
+- **Phase 7:** `AppSettings` (@Observable, UserDefaults, `onChange` → `AppCoordinator.applySettings`
   re-applies everything live). Release velocity feeds the spring (Phase 5). **Peek**:
   `HoverMonitor` (global + local mouse-moved monitors, no permission) → pointer over the notch
   swells it to progress 0.06 and makes it clickable; click opens. **Reduce Motion**: 0.2 s
@@ -260,10 +332,26 @@ update Progress below.
   warp 0 late frames over 6 cycles, main-thread p95 3.3 ms; zero-bend warp layer vs the real
   screen: identical raw pixels (seamless). Posed captures show the menu bar items next to the
   notch pushed out and colour-split. Unverified: the feel of the pointer lens.
+- **Phase 11 (feature-based MVVM):** every file moved (git mv, history kept) into `App/`,
+  `Core/`, `Features/<F>/{Models,ViewModels,Views,Services,Shaders}`, `Resources/` and
+  `Debug/`; one type per file. Renamed: `PanelController` → `NotchViewModel`, `TouchPreview`
+  → `TrackpadPreviewViewModel`, `ScreenBender.Motion` → `SilhouetteMotion`,
+  `ScreenWarpView.Uniforms` → `WarpUniforms`, `DebugSnapshot` → `DebugHarness` + `SelfTest` +
+  `SnapshotTest`. Split out: `AppDelegate`'s wiring → `AppCoordinator`, its screen choice →
+  `NotchGeometryProvider`, its hotkey handling → `HotKeyRegistrar`; `PanelController`'s
+  effect half → `LiquidMotionEngine`, its focus return → `FocusHandoff`. New: view models for
+  Settings, Onboarding and the menu bar; `WindowRouter`; `SwipeTarget` (the gesture engine no
+  longer knows the panel or the terminal); models `Silhouette`, `ShortcutInput`,
+  `OnboardingRecord`. Behaviour unchanged, except three small fixes: the Settings "shortcut
+  taken" warning updates live, the welcome window shows the current shortcut, and Settings
+  re-reads Launch at Login each time it opens. Verified against the pre-refactor build: 0
+  warnings (Debug and Release), 27 unit tests (18 + 9 new), `-snapshot` PNGs and every posed
+  `-effecttest` frame byte-identical, `-selftest` output identical, all six interaction checks
+  OK, pacing as before (0–1 late frames).
 
 ## Debug snapshots
 Screen Recording isn't granted to the CLI, but an app can render its own window. Debug builds
-accept `-selftest` (open/close via the controller, printing key window, first responder and
+(`DEXMA/Debug/`, flags dispatched by `DebugHarness`) accept `-selftest` (open/close via the controller, printing key window, first responder and
 frontmost app at each step) and `-snapshot <dir>`: they type `ls /` into the shell, render the panel at progress
 0/0.15/0.5/1 to PNGs, and quit. Run the binary directly:
 `.../Debug/DEXMA.app/Contents/MacOS/DEXMA -snapshot /tmp/snap`, then view the PNGs.
@@ -287,7 +375,8 @@ and never quits (wrap runs in a watchdog).
   functions; hop with `MainActor.assumeIsolated` only when the callback is known to arrive
   on the main thread.
 - Project `DEXMA.xcodeproj`, target/scheme `DEXMA` (tests `DEXMATests`, `DEXMAUITests`);
-  sources in `DEXMA/`. Swift module `DEXMA` (`@testable import DEXMA`).
+  sources in `DEXMA/` (layout under *Architecture*), unit tests in `DEXMATests/` mirroring it.
+  Swift module `DEXMA` (`@testable import DEXMA`).
 - Settings (now in the project): deployment target macOS 14.0, `LSUIElement` = YES, App Sandbox
   OFF, Hardened Runtime ON, product and display name DEXMA, SPM packages SwiftTerm
   (upToNextMajor 1.20.0) + OpenMultitouchSupport (upToNextMinor 3.0.3). Bundle id is still

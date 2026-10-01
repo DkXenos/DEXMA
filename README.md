@@ -91,8 +91,20 @@ Accessibility is granted. They update as soon as you grant it, with no restart n
 
 ## Project layout
 
-- `DEXMA/`: app sources (AppKit + SwiftUI, one type per file).
-- `DEXMATests/`: unit tests (Swift Testing): gesture recognition, geometry, settings
-  migration.
+The app uses a feature-based MVVM layout (AppKit + SwiftUI), with one type per file.
+
+- `DEXMA/App/`: the entry point, the app delegate, and `AppCoordinator`, which builds and
+  connects everything at launch.
+- `DEXMA/Core/`: shared building blocks with no UI: spring animation, notch geometry, the
+  settings store, permissions, launch at login.
+- `DEXMA/Features/`: one folder per feature: `Notch`, `Terminal`, `Gestures`,
+  `LiquidMotion`, `ScreenWarp`, `HotKey`, `MenuBar`, `Settings` and `Onboarding`. Each is
+  split into `Models/`, `ViewModels/`, `Views/` and `Services/` (and `Shaders/` for Metal),
+  as far as it needs them.
+- `DEXMA/Resources/`: the asset catalog with the app icon.
+- `DEXMA/Debug/`: self-checks that only exist in Debug builds (`-selftest`, `-snapshot`,
+  `-effecttest`, `-warptest`).
+- `DEXMATests/`: unit tests (Swift Testing), in the same `Core/` and `Features/` folders:
+  gesture recognition, geometry, the liquid effect, shortcut recording, settings migration.
 - `DEXMAUITests/`: Xcode's UI test template.
 - `CLAUDE.md`: architecture notes, rules and a development log.
