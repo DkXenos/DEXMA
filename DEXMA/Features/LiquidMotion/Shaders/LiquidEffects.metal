@@ -129,11 +129,11 @@ static float roundedRectDistance(float2 p, float4 rect, float r, thread float2 &
 // control: x, y, width, height of the control inside the margin.
 // lens: pointer x, y, lens radius, magnification at its centre.
 // fx: rim refraction (pt), aberration (pt), light opacity, bulge (fraction).
-// extra: margin (pt), unused × 3.
+// extra: margin (pt), corner radius (pt; 0 = a capsule), unused × 2.
 [[ stitchable ]] half4 liquidControlLens(float2 position, SwiftUI::Layer layer,
                                          float4 control, float4 lens, float4 fx, float4 extra) {
     float2 centre = control.xy + control.zw * 0.5;
-    float radius = control.w * 0.5;
+    float radius = extra.y > 0.0 ? min(extra.y, control.w * 0.5) : control.w * 0.5;
     // Bulge: the control swells about its centre, so content comes from nearer the centre.
     float2 p = centre + (position - centre) / (1.0 + fx.w);
     // Magnifier around the pointer: strongest at its centre, easing to nothing at its radius.

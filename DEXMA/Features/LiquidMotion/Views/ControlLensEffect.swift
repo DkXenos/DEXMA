@@ -13,6 +13,8 @@ struct ControlLensEffect: ViewModifier {
 
     let lens: ControlLens
     let size: CGSize
+    /// The control's corner radius (nil: a capsule).
+    var cornerRadius: CGFloat?
 
     func body(content: Content) -> some View {
         let frame = lens.frame
@@ -40,7 +42,8 @@ struct ControlLensEffect: ViewModifier {
                     lens: SIMD4(frame.center.x + m, frame.center.y + m,
                                 tuning.controlLensRadius * size.height, tuning.controlLens * frame.presence),
                     fx: SIMD4(tuning.controlRefraction * strength, tuning.controlAberration * strength,
-                              tuning.controlHighlight * strength, tuning.controlBulge * strength))),
+                              tuning.controlHighlight * strength, tuning.controlBulge * strength),
+                    cornerRadius: Double(cornerRadius ?? 0))),
                 maxSampleOffset: Self.reach,
                 isEnabled: lens.isActive)
             .padding(-m)
@@ -51,6 +54,7 @@ struct ControlLensEffect: ViewModifier {
         var control: SIMD4<Double>
         var lens: SIMD4<Double>
         var fx: SIMD4<Double>
+        var cornerRadius: Double = 0
 
         static let zero = Uniforms(control: .zero, lens: .zero, fx: .zero)
     }
@@ -60,6 +64,6 @@ struct ControlLensEffect: ViewModifier {
             .float4(u.control.x, u.control.y, u.control.z, u.control.w),
             .float4(u.lens.x, u.lens.y, u.lens.z, u.lens.w),
             .float4(u.fx.x, u.fx.y, u.fx.z, u.fx.w),
-            .float4(margin, 0, 0, 0))
+            .float4(margin, u.cornerRadius, 0, 0))
     }
 }

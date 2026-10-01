@@ -21,11 +21,16 @@ enum HoverTest {
             _ = await notch.waitForRest()
             try? await Task.sleep(for: .milliseconds(300))
             let geometry = notch.geometry
-            let segment = CGSize(width: TabBand.labelledWidth, height: TabBand.segmentHeight)
             let tabs = geometry.tabBandFrame
-            // The Search segment (the second), in panel coordinates (top-left origin).
-            let search = CGRect(x: tabs.minX + segment.width + TabBand.spacing,
-                                y: tabs.midY - segment.height / 2, width: segment.width, height: segment.height)
+            // The Search segment (the second, icon-only on the terminal tab), in panel
+            // coordinates (top-left origin), from the same layout the band uses.
+            let widths = PanelTab.allCases.map { tab in
+                TabSwitcherLayout.activeWidth(labelWidth: (tab.title as NSString)
+                    .size(withAttributes: [.font: TabSwitcher.labelFont]).width)
+            }
+            let switcher = TabSwitcherLayout(activeWidths: widths, progress: 0, available: tabs.width)
+            let containerY = (geometry.bandHeight - TabSwitcherLayout.tabHeight) / 2 - TabSwitcherLayout.padding
+            let search = switcher.tabs[1].frame.offsetBy(dx: tabs.minX, dy: containerY)
             let lens = notch.band.lens(for: "tab.\(PanelTab.search)")
             let allowed = search.insetBy(dx: -ControlLensEffect.margin, dy: -ControlLensEffect.margin)
             // Unfocused, the terminal's caret stops blinking, so only the warp changes pixels.
@@ -149,27 +154,27 @@ enum HoverTest {
             panel.makeFirstResponder(nil)
             try? await Task.sleep(for: .milliseconds(300))
             let actions = geometry.actionBandFrame
-            let button = SearchActionsBand.buttonSize
-            // Reload: the third of four buttons, right-aligned, 2 pt apart.
-            let reload = CGRect(x: actions.maxX - 2 * button.width - 2,
+            let button = CGSize(width: 32, height: 28)
+            // Reset: the first of the two buttons right-aligned at the band's right edge.
+            let reload = CGRect(x: actions.maxX - 2 * button.width,
                                 y: actions.midY - button.height / 2, width: button.width, height: button.height)
-            let reloadLens = notch.band.lens(for: "search.reload")
+            let reloadLens = notch.band.lens(for: "search.reset")
             if let plain = DebugImages.window(panel) {
                 reloadLens.hover(at: CGPoint(x: button.width / 2, y: button.height / 2))
                 try? await Task.sleep(for: .milliseconds(170))
                 if let image = DebugImages.window(panel) {
-                    DebugImages.write(image, dir, "hover-reload")
+                    DebugImages.write(image, dir, "hover-reset")
                     let allowed = reload.insetBy(dx: -ControlLensEffect.margin, dy: -ControlLensEffect.margin)
                     // The live page keeps changing under it: compare the band strip only.
                     let strip = CGRect(x: 0, y: 0, width: CGFloat(image.width),
                                        height: geometry.contentFrame.minY * panel.backingScaleFactor)
                     if let a = image.cropping(to: strip), let b = plain.cropping(to: strip) {
-                        print("[hover] reload button breath vs plain (band strip): \(confinement(a, b, allowed: allowed, panel: panel, geometry: geometry))")
+                        print("[hover] Reset button breath vs plain (band strip): \(confinement(a, b, allowed: allowed, panel: panel, geometry: geometry))")
                     }
                 }
                 reloadLens.hover(at: nil)
                 try? await Task.sleep(for: .milliseconds(600))
-                report("reload button: lens gone after exit", ok: !reloadLens.isActive, reloadLens)
+                report("Reset button: lens gone after exit", ok: !reloadLens.isActive, reloadLens)
             }
             notch.select(.terminal)
             try? await Task.sleep(for: .milliseconds(800))

@@ -3,10 +3,26 @@ import WebKit
 
 /// Owns the Search tab's one long-lived card (search field + web view). Created at launch like
 /// the shell, but loads nothing until the first search; never recreated, so the page, its
-/// history and its scroll position survive closing the panel.
+/// history and its scroll position survive closing the panel. A spare web view waits ready, so
+/// Reset (back to the empty state, history gone) is instant.
 final class SearchSession: NSObject, MotionContent, WKNavigationDelegate, WKUIDelegate,
                            WKScriptMessageHandler, NSTextFieldDelegate {
     private static let scrollMessage = "dexmaScroll"
+    private static let backgroundMessage = "dexmaBackground"
+    /// Reports the page's background colour (body's, else the root's) after it loads and when
+    /// the system switches light/dark, so the card around the page matches it: no seam.
+    private static let backgroundScript = """
+        (function () {
+          function post() {
+            var body = document.body ? getComputedStyle(document.body).backgroundColor : '';
+            var root = getComputedStyle(document.documentElement).backgroundColor;
+            window.webkit.messageHandlers.\(backgroundMessage).postMessage({ body: body, root: root });
+          }
+          addEventListener('load', post);
+          matchMedia('(prefers-color-scheme: dark)').addEventListener('change', function () { setTimeout(post, 50); });
+          post();
+        })();
+        """
     /// Reports whether the page is scrolled to its end, so a swipe up there can close the panel
     /// (as at the terminal's newest output) instead of scrolling, and whether it can still
     /// scroll sideways either way, so a sideways swipe there scrolls it rather than the tabs.
@@ -30,6 +46,10 @@ final class SearchSession: NSObject, MotionContent, WKNavigationDelegate, WKUIDe
 
     let card: SearchCardView
     var webView: WKWebView { card.webView }
+    /// Shared by every web view this tab makes: one set of scripts and handlers.
+    private let contentController = WKUserContentController()
+    /// Made ahead (idle), swapped in by `reset`.
+    private var spare: WKWebView?
     /// Back/forward, loading or the page changed: for the view model.
     var onStateChange: (() -> Void)?
     /// The card may look different now (a page loaded or finished loading).
@@ -56,28 +76,48 @@ final class SearchSession: NSObject, MotionContent, WKNavigationDelegate, WKUIDe
     private var observations: [NSKeyValueObservation] = []
 
     init(size: CGSize) {
-        let configuration = WKWebViewConfiguration()
-        // Without it, WebKit's user agent lacks the Safari token and Google serves a bare page.
-        configuration.applicationNameForUserAgent = "Version/26.0 Safari/605.1.15"
-        let webView = WKWebView(frame: CGRect(origin: .zero, size: size), configuration: configuration)
+        let webView = Self.makeWebView(size: size, controller: contentController)
         card = SearchCardView(size: size, webView: webView)
         super.init()
-        // The handler is retained by the content controller; both live as long as the app.
-        configuration.userContentController.add(self, name: Self.scrollMessage)
-        configuration.userContentController.addUserScript(
+        // The handlers are retained by the content controller; both live as long as the app.
+        contentController.add(self, name: Self.scrollMessage)
+        contentController.add(self, name: Self.backgroundMessage)
+        contentController.addUserScript(
             WKUserScript(source: Self.scrollScript, injectionTime: .atDocumentEnd, forMainFrameOnly: true))
-        webView.navigationDelegate = self
-        webView.uiDelegate = self
+        contentController.addUserScript(
+            WKUserScript(source: Self.backgroundScript, injectionTime: .atDocumentEnd, forMainFrameOnly: true))
         card.field.delegate = self
         card.field.target = self
         card.field.action = #selector(submit)
-        // Hidden while fully closed, like the terminal.
-        card.isHidden = true
+        adopt(webView)
+        spare = Self.makeWebView(size: size, controller: contentController)
+    }
+
+    /// A web view of this tab: dark, Safari's user agent, the tab's scripts, the shared
+    /// persistent website data (cookies survive restarts).
+    private static func makeWebView(size: CGSize, controller: WKUserContentController) -> WKWebView {
+        let configuration = WKWebViewConfiguration()
+        configuration.userContentController = controller
+        configuration.websiteDataStore = .default()
+        // Without it, WebKit's user agent lacks the Safari token and Google serves a bare page.
+        configuration.applicationNameForUserAgent = "Version/26.0 Safari/605.1.15"
+        let webView = WKWebView(frame: CGRect(origin: .zero, size: size), configuration: configuration)
+        webView.allowsBackForwardNavigationGestures = false  // Sideways swipes switch tabs.
+        webView.appearance = NSAppearance(named: .darkAqua)
+        webView.alphaValue = 0  // Until its first page has loaded: no white flash.
+        return webView
+    }
+
+    /// Makes `webView` the live one: delegates and the state the band watches.
+    private func adopt(_ webView: WKWebView) {
+        webView.navigationDelegate = self
+        webView.uiDelegate = self
         let changed: (WKWebView, Any) -> Void = { [weak self] _, _ in self?.onStateChange?() }
         observations = [
             webView.observe(\.canGoBack) { view, change in changed(view, change) },
             webView.observe(\.canGoForward) { view, change in changed(view, change) },
             webView.observe(\.isLoading) { view, change in changed(view, change) },
+            webView.observe(\.url) { view, change in changed(view, change) },
         ]
     }
 
@@ -122,6 +162,17 @@ final class SearchSession: NSObject, MotionContent, WKNavigationDelegate, WKUIDe
         return direction > 0 ? pageCanScrollRight : pageCanScrollLeft
     }
 
+    /// The page's host without "www.", for the band; empty with no page.
+    var domain: String {
+        guard card.showsPage, let host = webView.url?.host else { return "" }
+        return host.hasPrefix("www.") ? String(host.dropFirst(4)) : host
+    }
+
+    /// The page came over HTTPS.
+    var isSecure: Bool {
+        card.showsPage && webView.url?.scheme == "https"
+    }
+
     var canGoBack: Bool { webView.canGoBack }
     var canGoForward: Bool { webView.canGoForward }
     var isLoading: Bool { webView.isLoading }
@@ -145,9 +196,40 @@ final class SearchSession: NSObject, MotionContent, WKNavigationDelegate, WKUIDe
         NSWorkspace.shared.open(url)
     }
 
+    /// Back to the empty state with no history: the spare web view takes over at once, and a
+    /// new spare is made a moment later, off the click.
+    func reset() {
+        let old = webView
+        let fresh = spare ?? Self.makeWebView(size: card.bounds.size, controller: contentController)
+        spare = nil
+        old.stopLoading()
+        old.navigationDelegate = nil
+        old.uiDelegate = nil
+        let hadFocus = (card.window?.firstResponder as? NSView)?.isDescendant(of: old) ?? false
+        card.replaceWebView(with: fresh)
+        adopt(fresh)
+        card.showsPage = false
+        card.cardColor = SearchCardView.defaultColor
+        card.field.stringValue = ""
+        fieldEdited = false
+        fallback = nil
+        pageImage = nil
+        pageAtBottom = true
+        pageCanScrollLeft = false
+        pageCanScrollRight = false
+        if hadFocus || card.window?.isKeyWindow == true { focusField() }
+        onStateChange?()
+        onChange?()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in
+            guard let self, self.spare == nil else { return }
+            self.spare = Self.makeWebView(size: self.card.bounds.size, controller: self.contentController)
+        }
+    }
+
     func resize(to size: CGSize) {
         guard card.frame.size != size else { return }
         card.setFrameSize(size)
+        spare?.setFrameSize(size)
     }
 
     @objc private func submit() {
@@ -229,6 +311,7 @@ final class SearchSession: NSObject, MotionContent, WKNavigationDelegate, WKUIDe
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         fallback = nil
+        card.revealsPage = true
         onChange?()
         // Images and results often fill in just after: picture the page again a bit later.
         DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in self?.onChange?() }
@@ -267,10 +350,26 @@ final class SearchSession: NSObject, MotionContent, WKNavigationDelegate, WKUIDe
 
     func userContentController(_ userContentController: WKUserContentController,
                                didReceive message: WKScriptMessage) {
-        guard message.name == Self.scrollMessage, let state = message.body as? [String: Any] else { return }
+        guard let state = message.body as? [String: Any] else { return }
+        if message.name == Self.backgroundMessage {
+            updateCardColor(body: state["body"] as? String, root: state["root"] as? String)
+            return
+        }
+        guard message.name == Self.scrollMessage else { return }
         pageAtBottom = state["bottom"] as? Bool ?? pageAtBottom
         pageCanScrollLeft = state["left"] as? Bool ?? false
         pageCanScrollRight = state["right"] as? Bool ?? false
         onChange?()  // Scrolled (also by keyboard or script): the page's picture is stale.
+    }
+
+    /// The card takes the page's background (body's if it has one, else the root's, else what
+    /// WebKit paints under the page), so its edges show no seam.
+    private func updateCardColor(body: String?, root: String?) {
+        let parsed = [body, root].compactMap { $0.flatMap(CSSColor.init) }.first { !$0.isTransparent }
+        let color = parsed.map { NSColor(srgbRed: $0.red, green: $0.green, blue: $0.blue, alpha: 1) }
+            ?? webView.underPageBackgroundColor ?? SearchCardView.defaultColor
+        guard color != card.cardColor else { return }
+        card.cardColor = color
+        onChange?()
     }
 }

@@ -33,6 +33,8 @@ final class NotchViewModel: SwipeTarget, TabSwipeTarget {
     let search: SearchViewModel
     /// The content card's pages, one per tab.
     let pager: ContentPagerView
+    /// The pulsing running dot over the band (at rest; see `showsStaticRunningDot`).
+    let runningDot: RunningDotView
     @ObservationIgnored var gestureTuning = GestureTuning.standard
     private let panel: NotchPanel
     private let driver: SpringDriver
@@ -49,11 +51,12 @@ final class NotchViewModel: SwipeTarget, TabSwipeTarget {
     @ObservationIgnored private var ticksOnLanding = false
 
     init(panel: NotchPanel, session: ShellSession, search: SearchViewModel, pager: ContentPagerView,
-         geometry: NotchGeometry) {
+         runningDot: RunningDotView, geometry: NotchGeometry) {
         self.panel = panel
         self.session = session
         self.search = search
         self.pager = pager
+        self.runningDot = runningDot
         self.geometry = geometry
         let driver = SpringDriver(window: panel)
         self.driver = driver
@@ -87,6 +90,7 @@ final class NotchViewModel: SwipeTarget, TabSwipeTarget {
             self?.band.stepIndicator(dt: dt, velocity: tabDriver?.screenVelocity ?? 0) ?? false
         }
         pager.setPages([session.container, search.session.card])
+        session.onStatusChange = { [weak self] in self?.updateRunningDot() }
         tabSwipes.target = self
         tabSwipes.start()
     }
@@ -165,6 +169,7 @@ final class NotchViewModel: SwipeTarget, TabSwipeTarget {
             // typing goes straight to the selected tab.
             panel.allowsKey = true
             pager.isShowingPages = true
+            session.refreshStatus()
             panel.makeKey()
             focusSelectedTab()
             // After focusing, so a fresh snapshot shows the caret the live view will have.
@@ -180,6 +185,7 @@ final class NotchViewModel: SwipeTarget, TabSwipeTarget {
         // Before focus leaves: the snapshot must match the frame on screen right now.
         settleTabsNow()
         if progress != 0 { motion.begin() }
+        defer { updateRunningDot() }
         if state != .closed {
             if state == .open, tab == .search { search.session.rememberFocus(in: panel) }
             band.releaseAll()
@@ -299,7 +305,10 @@ final class NotchViewModel: SwipeTarget, TabSwipeTarget {
 
     /// Every display frame, once the spring has stepped.
     private func stepEffects(_ dt: CFTimeInterval) -> Bool {
-        motion.step(dt: dt, progress: progress, geometry: geometry, isOpen: state == .open)
+        let wasActive = effects.isActive
+        let busy = motion.step(dt: dt, progress: progress, geometry: geometry, isOpen: state == .open)
+        if wasActive != effects.isActive { updateRunningDot() }
+        return busy
     }
 
     private func didArrive(at target: CGFloat, velocity: CGFloat) {
@@ -352,6 +361,34 @@ final class NotchViewModel: SwipeTarget, TabSwipeTarget {
     private func tabProgressChanged(_ value: CGFloat) {
         tabProgress = value
         pager.setProgress(value)
+        updateRunningDot()
+    }
+
+    // MARK: Terminal context
+
+    private static let contextFont = NSFont.monospacedSystemFont(ofSize: TerminalContextLayout.fontSize,
+                                                                 weight: .regular)
+
+    /// The working directory (and where the running dot goes) in the band right of the notch.
+    var terminalContext: TerminalContextLayout {
+        TerminalContextLayout(directory: session.status.directory, home: NSHomeDirectory(),
+                              region: geometry.actionBandFrame) { text in
+            (text as NSString).size(withAttributes: [.font: Self.contextFont]).width
+        }
+    }
+
+    /// While the panel moves the band draws the running dot itself (still), so the liquid
+    /// effect bends it; at rest the pulsing overlay does.
+    var showsStaticRunningDot: Bool {
+        session.status.isRunningCommand && effects.isActive
+    }
+
+    /// The pulsing dot: only open, still and with a command running, as visible as the
+    /// terminal's share of the band's crossfade.
+    private func updateRunningDot() {
+        let shown = state == .open && !effects.isActive && progress == 1 && session.status.isRunningCommand
+        let reveal = max(0, 1 - abs(tabProgress - CGFloat(index(of: .terminal))))
+        runningDot.update(frame: terminalContext.dotFrame, visibility: shown ? reveal : 0)
     }
 
     /// Before closing: no half-swiped pages; the selected tab snaps into place (the liquid

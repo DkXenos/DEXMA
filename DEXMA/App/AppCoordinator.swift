@@ -28,9 +28,10 @@ final class AppCoordinator: WindowRouter {
         // Pre-warm: the Search card and its web view exist from launch (nothing loads yet).
         let search = SearchViewModel(session: SearchSession(size: geometry.contentFrame.size))
         let panel = NotchPanel(frame: geometry.panelFrame)
-        let pager = ContentPagerView(size: geometry.contentFrame.size, cornerRadius: SearchCardView.pageRadius)
+        let pager = ContentPagerView(size: geometry.contentFrame.size, cornerRadius: NotchGeometry.cardRadius)
+        let runningDot = RunningDotView(frame: .zero)
         let notch = NotchViewModel(panel: panel, session: session, search: search, pager: pager,
-                                   geometry: geometry)
+                                   runningDot: runningDot, geometry: geometry)
         notch.geometryForOpening = { [weak self] in self?.geometryProvider.makeGeometry() }
 
         let hostingView = NSHostingView(rootView: NotchContentView(viewModel: notch))
@@ -43,6 +44,7 @@ final class AppCoordinator: WindowRouter {
         hostingView.frame = content.bounds
         hostingView.autoresizingMask = [.width, .height]
         content.addSubview(hostingView)
+        content.addSubview(runningDot)  // Over the SwiftUI band.
         let bender = ScreenBender(panel: panel, container: content,
                                   geometry: { [weak notch] in notch?.geometry ?? geometry })
         notch.bender = bender
@@ -76,7 +78,7 @@ final class AppCoordinator: WindowRouter {
             showWelcome()
         }
         // Compile the liquid effect's shaders now, so the first open doesn't hitch.
-        LiquidMotionLayer.precompile()
+        LiquidMotionLayer<EmptyView>.precompile()
         DispatchQueue.main.async { notch.warmUpEffects() }
         #if DEBUG
         DebugHarness.runIfRequested(coordinator: self, panel: panel, notch: notch, session: session)

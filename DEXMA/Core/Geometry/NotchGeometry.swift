@@ -95,39 +95,51 @@ struct NotchGeometry: Equatable {
         return size + room * CGFloat(tanh(Double((value - size) / room)))
     }
 
-    /// Inset of the content card and the band's controls from the expanded body's sides.
-    static let contentInset: CGFloat = 16
-    /// Room kept between the band's controls and the notch.
-    static let notchGap: CGFloat = 12
+    // MARK: Layout of the open panel (the tab UI spec)
 
-    /// The strip beside the notch where the tabs and buttons sit: the notch's own height, but
-    /// at least 28 pt so they fit beside the short pill of a notch-less screen.
-    var bandHeight: CGFloat {
-        max(notchRect.height, 28)
-    }
+    /// The strip across the top of the open panel: tabs left of the notch, the selected tab's
+    /// context right of it.
+    static let bandHeight: CGFloat = 36
+    /// The band's horizontal padding from the body's sides.
+    static let bandPadding: CGFloat = 14
+    /// The content card: inset from the body's sides and bottom, its top, its corner radius.
+    static let cardInset: CGFloat = 10
+    static let cardTop: CGFloat = 40
+    static let cardRadius: CGFloat = 19
 
-    /// Left of the notch, in the panel (top-left origin): the tab segments.
+    var bandHeight: CGFloat { Self.bandHeight }
+
+    /// The expanded body's left and right edges in the panel.
+    private var bodyMinX: CGFloat { notchCenterXInPanel - expandedSize.width / 2 }
+    private var bodyMaxX: CGFloat { notchCenterXInPanel + expandedSize.width / 2 }
+
+    /// Left of the notch, in the panel (top-left origin): the tab switcher. Equal in width to
+    /// the right region; the gap between them is exactly the notch (or the pill).
     var tabBandFrame: CGRect {
-        let left = notchCenterXInPanel - expandedSize.width / 2 + Self.contentInset
-        let right = notchRect.minX - panelFrame.minX - Self.notchGap
+        let left = bodyMinX + Self.bandPadding
+        let right = notchRect.minX - panelFrame.minX
         return CGRect(x: left, y: 0, width: max(right - left, 0), height: bandHeight)
     }
 
-    /// Right of the notch, in the panel (top-left origin): the Search tab's buttons.
+    /// Right of the notch, in the panel (top-left origin): the selected tab's context.
     var actionBandFrame: CGRect {
-        let left = notchRect.maxX - panelFrame.minX + Self.notchGap
-        let right = notchCenterXInPanel + expandedSize.width / 2 - Self.contentInset
+        let left = notchRect.maxX - panelFrame.minX
+        let right = bodyMaxX - Self.bandPadding
         return CGRect(x: left, y: 0, width: max(right - left, 0), height: bandHeight)
     }
 
-    /// The content card (terminal or Search) inside the panel (top-left origin): below the
-    /// band, inset from the expanded body's edges. It never moves or resizes while animating.
+    /// The content card (terminal, Search…) inside the panel (top-left origin). It never moves
+    /// or resizes while animating.
     var contentFrame: CGRect {
-        let inset = Self.contentInset
-        let top = bandHeight + 6
-        return CGRect(x: notchCenterXInPanel - expandedSize.width / 2 + inset, y: top,
-                      width: expandedSize.width - 2 * inset,
-                      height: expandedSize.height - top - inset + 2)
+        CGRect(x: bodyMinX + Self.cardInset, y: Self.cardTop,
+               width: expandedSize.width - 2 * Self.cardInset,
+               height: max(expandedSize.height - Self.cardTop - Self.cardInset, 0))
+    }
+
+    /// Centre of the page dots: in the margin below the card, centred both ways.
+    var pageDotsCenter: CGPoint {
+        let card = contentFrame
+        return CGPoint(x: card.midX, y: card.maxY + Self.cardInset / 2)
     }
 
     /// Where the pointer counts as over the notch (global coordinates): the notch plus a

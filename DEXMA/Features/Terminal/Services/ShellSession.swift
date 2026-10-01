@@ -1,4 +1,5 @@
 import AppKit
+import Darwin
 import SwiftTerm
 
 /// Owns the one long-lived terminal view and the zsh inside it. Created at launch; the shell
@@ -10,6 +11,11 @@ final class ShellSession: NSObject, LocalProcessTerminalViewDelegate, MotionCont
     var terminalView: LocalProcessTerminalView { container.terminalView }
     /// The shell printed something.
     var onOutput: (() -> Void)?
+    /// Working directory and whether a command is running, for the band.
+    let status = ShellStatus()
+    /// The working directory or the running state changed.
+    var onStatusChange: (() -> Void)?
+    private var statusRefreshPending = false
     var onSnapshotRefreshed: (() -> Void)?
     private var lastStart = Date.distantPast
     private var cachedSnapshot: TerminalSnapshot?
@@ -20,13 +26,51 @@ final class ShellSession: NSObject, LocalProcessTerminalViewDelegate, MotionCont
         terminal.font = .monospacedSystemFont(ofSize: 12.5, weight: .regular)
         terminal.nativeBackgroundColor = .black
         terminal.nativeForegroundColor = NSColor(white: 0.9, alpha: 1)
-        container = TerminalContainerView(terminalView: terminal)
+        container = TerminalContainerView(size: size, terminalView: terminal)
         // Hidden while fully closed so it doesn't draw; the shell keeps running regardless.
         container.isHidden = true
         super.init()
         terminal.processDelegate = self
-        terminal.onOutput = { [weak self] in self?.onOutput?() }
+        terminal.onOutput = { [weak self] in
+            self?.onOutput?()
+            self?.scheduleStatusRefresh()
+        }
         start()
+    }
+
+    // MARK: Status (working directory, running command)
+
+    /// Re-reads the shell's working directory and whether a command runs in the foreground,
+    /// straight from the processes: no shell integration needed, so it works with any .zshrc
+    /// (an OSC 7 hook would depend on it). A few µs.
+    func refreshStatus() {
+        let pid = terminalView.process.shellPid
+        guard pid > 0 else { return }
+        let before = (status.directory, status.isRunningCommand)
+        var info = proc_vnodepathinfo()
+        let size = Int32(MemoryLayout<proc_vnodepathinfo>.size)
+        if proc_pidinfo(pid, PROC_PIDVNODEPATHINFO, 0, &info, size) == size {
+            let directory = withUnsafeBytes(of: &info.pvi_cdir.vip_path) { bytes in
+                String(decoding: bytes.prefix { $0 != 0 }, as: UTF8.self)
+            }
+            if !directory.isEmpty, directory != status.directory { status.directory = directory }
+        }
+        // The terminal's foreground process group is the shell's own at the prompt, a command's
+        // while one runs (zsh gives each job its own group).
+        let foreground = tcgetpgrp(terminalView.process.childfd)
+        let running = foreground > 0 && foreground != getpgid(pid)
+        if running != status.isRunningCommand { status.isRunningCommand = running }
+        if before != (status.directory, status.isRunningCommand) { onStatusChange?() }
+    }
+
+    /// After output (a prompt, a command starting or finishing), coalesced.
+    private func scheduleStatusRefresh() {
+        guard !statusRefreshPending else { return }
+        statusRefreshPending = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) { [weak self] in
+            self?.statusRefreshPending = false
+            self?.refreshStatus()
+        }
     }
 
     /// A picture of the terminal as it looks now, for the motion layer. Reuses the last one
@@ -64,7 +108,9 @@ final class ShellSession: NSObject, LocalProcessTerminalViewDelegate, MotionCont
     // MARK: MotionContent
 
     func motionSnapshot() -> ContentSnapshot? {
-        snapshot()?.content
+        guard var content = snapshot()?.content else { return nil }
+        content.origin = container.terminalOrigin
+        return content
     }
 
     /// Captured synchronously (a few ms), so it never needs `onSnapshotRefreshed`.

@@ -1,13 +1,15 @@
 import SwiftUI
 
-/// The content (terminal or Search card) while the panel moves: a snapshot of it, stretched
-/// with the silhouette and bent by the lens shader (LiquidEffects.metal), plus the light on
-/// the rim. It sits over the black silhouette, which stays an ordinary vector shape throughout
-/// (squashed and stretched through its own size), so nothing but the content is ever swapped.
+/// The panel's SwiftUI chrome (band, card stroke, page dots) always, and while the panel
+/// moves the content (terminal or web page) as a snapshot in place of the live view, all of it
+/// stretched with the silhouette and bent by the lens shader (LiquidEffects.metal), plus the
+/// light on the rim. It sits over the black silhouette, which stays an ordinary vector shape
+/// throughout (squashed and stretched through its own size), so nothing but the content is
+/// ever swapped; the chrome is the same views moving or not.
 ///
-/// Only on screen while `effects.isActive`; at rest it's transparent with both shaders
-/// disabled, and the live content shows instead.
-struct LiquidMotionLayer: View {
+/// At rest both shaders are disabled (never run) and the snapshot is gone: the live content
+/// shows under the chrome.
+struct LiquidMotionLayer<Chrome: View>: View {
     let effects: MotionEffects
     /// The silhouette as drawn this frame, already scaled by `scale`.
     let shape: NotchShape
@@ -17,6 +19,9 @@ struct LiquidMotionLayer: View {
     let panelSize: CGSize
     let contentFrame: CGRect
     let contentOpacity: CGFloat
+    /// Whether the chrome takes clicks (the panel is open).
+    let chromeInteractive: Bool
+    @ViewBuilder let chrome: Chrome
 
     var body: some View {
         let active = effects.isActive
@@ -31,13 +36,18 @@ struct LiquidMotionLayer: View {
             // SwiftUI skips a layer effect whose content is all transparent (before the text
             // fades in, or with no snapshot yet), and the light must still be drawn. Black at
             // this alpha over the black silhouette changes no pixel.
-            Color.black.opacity(0.004)
-            if let snapshot = effects.snapshot {
+            Color.black.opacity(active ? 0.004 : 0)
+                .allowsHitTesting(false)
+            if active, let snapshot = effects.snapshot {
                 Image(decorative: snapshot.image, scale: snapshot.scale)
-                    .frame(width: contentFrame.width, height: contentFrame.height)
-                    .offset(x: contentFrame.minX, y: contentFrame.minY)
+                    .frame(width: snapshot.size.width, height: snapshot.size.height)
+                    .offset(x: contentFrame.minX + snapshot.origin.x, y: contentFrame.minY + snapshot.origin.y)
                     .opacity(contentOpacity)
+                    .allowsHitTesting(false)
             }
+            chrome
+                .opacity(contentOpacity)
+                .allowsHitTesting(chromeInteractive)
             if effects.isWarmUp {
                 // The band controls' shader, rendered once at launch (identity: all zero) on
                 // the closed notch's black, where this alpha changes no pixel.
@@ -64,8 +74,6 @@ struct LiquidMotionLayer: View {
             isEnabled: active)
         // Like the live content's mask: nothing shows outside the silhouette.
         .clipShape(shape)
-        .opacity(active ? 1 : 0)
-        .allowsHitTesting(false)
     }
 
     /// Compiles the shaders ahead of time (macOS 15+), the band controls' one too.
@@ -89,5 +97,5 @@ struct LiquidMotionLayer: View {
 
     /// The stretch moves content by at most the panel's transparent margin around the
     /// expanded shape (`MotionEffects.Frame.scale` clamps it to that).
-    private static let stretchReach = CGSize(width: NotchGeometry.margin, height: NotchGeometry.margin)
+    private static var stretchReach: CGSize { CGSize(width: NotchGeometry.margin, height: NotchGeometry.margin) }
 }

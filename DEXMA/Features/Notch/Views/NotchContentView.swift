@@ -6,7 +6,7 @@ import SwiftUI
 /// The black silhouette is always this one vector shape; the effect only squashes and
 /// stretches it through its size (exactly 1 × 1 at rest). While moving, the motion layer's
 /// snapshot stands in for the selected tab's live content; both switch in the same update.
-/// The band beside the notch stays live, scaled with the silhouette.
+/// The chrome (band, card stroke, page dots) lives in the motion layer, moving or not.
 struct NotchContentView: View {
     let viewModel: NotchViewModel
 
@@ -29,15 +29,10 @@ struct NotchContentView: View {
             LiquidMotionLayer(effects: viewModel.effects, shape: silhouette.shape,
                               scale: silhouette.scale, progress: viewModel.progress,
                               panelSize: panel, contentFrame: content,
-                              contentOpacity: contentOpacity)
-            NotchBand(viewModel: viewModel)
-                // The same squash and stretch as the content's (LiquidEffects.metal's
-                // liquidStretch), as a plain transform.
-                .scaleEffect(x: silhouette.scale.width, y: silhouette.scale.height,
-                             anchor: UnitPoint(x: silhouette.shape.centerX / max(panel.width, 1), y: 0))
-                .opacity(contentOpacity)
-                .clipShape(silhouette.shape)
-                .allowsHitTesting(viewModel.state == .open)
+                              contentOpacity: contentOpacity,
+                              chromeInteractive: viewModel.state == .open) {
+                NotchChrome(viewModel: viewModel)
+            }
         }
         .frame(width: panel.width, height: panel.height, alignment: .topLeading)
         .ignoresSafeArea()
