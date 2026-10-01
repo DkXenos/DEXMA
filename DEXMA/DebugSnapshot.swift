@@ -8,8 +8,13 @@ import SwiftTerm
 enum DebugSnapshot {
     static func runIfRequested(panel: NSPanel, controller: PanelController, session: ShellSession) {
         let arguments = ProcessInfo.processInfo.arguments
+        setvbuf(stdout, nil, _IOLBF, 0)  // Line-buffered, so a killed test run keeps its output.
         if arguments.contains("-selftest") {
             selfTest(panel: panel, controller: controller, session: session)
+            return
+        }
+        if let index = arguments.firstIndex(of: "-warptest"), index + 1 < arguments.count {
+            WarpTest.run(panel: panel, controller: controller, dir: URL(fileURLWithPath: arguments[index + 1]))
             return
         }
         if let index = arguments.firstIndex(of: "-effecttest"), index + 1 < arguments.count {

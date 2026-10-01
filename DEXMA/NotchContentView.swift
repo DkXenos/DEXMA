@@ -15,7 +15,8 @@ struct NotchContentView: View {
         let progress = controller.progress
         let effects = controller.effects
         let base = geometry.shape(at: progress)
-        let scale = effects.frame.scale(width: base.width, height: base.height)
+        let scale = effects.frame.scale(width: base.width, height: base.height,
+                                        limit: geometry.silhouetteLimit())
         let shape = base.scaled(by: scale)
         let panel = geometry.panelFrame.size
         let terminal = geometry.terminalFrame

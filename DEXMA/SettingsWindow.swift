@@ -11,6 +11,7 @@ final class TouchPreview {
 struct SettingsView: View {
     @Bindable var settings: AppSettings
     let permission: AccessibilityPermission
+    let screenRecording: ScreenRecordingPermission
     let preview: TouchPreview
     let gesturesAvailable: () -> Bool
     let hotKeyWorking: () -> Bool
@@ -71,6 +72,27 @@ struct SettingsView: View {
                 Slider(value: $settings.effectIntensity, in: AppSettings.effectIntensityRange) {
                     Text("Effect intensity")
                 } minimumValueLabel: { Text("Off") } maximumValueLabel: { Text("Full") }
+                Toggle(isOn: $settings.screenWarp) {
+                    Text("Bend the screen around the notch")
+                    Text("""
+                        Warps and colour-splits what's behind the notch while it moves, and \
+                        around the pointer near it. Needs Screen Recording; macOS shows its \
+                        recording indicator while it runs. Without it, a Liquid Glass edge \
+                        bends the screen instead (macOS 26).
+                        """)
+                }
+                if settings.screenWarp {
+                    LabeledContent {
+                        if screenRecording.isGranted {
+                            Label("On", systemImage: "checkmark.circle.fill").foregroundStyle(.green)
+                        } else {
+                            Button("Allow Screen Recording…") { screenRecording.requestAccess() }
+                        }
+                    } label: {
+                        Text("Screen Recording")
+                        Text("DEXMA only looks at the area around the notch, never saves it, and only while it moves or the pointer is near.")
+                    }
+                }
                 if NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
                     Text("Reduce Motion is on in System Settings, so animations are short, don't bounce, and skip the lens effect.")
                         .font(.caption).foregroundStyle(.secondary)
@@ -149,11 +171,14 @@ struct TrackpadPreview: View {
 
 final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     private let permission: AccessibilityPermission
+    private let screenRecording: ScreenRecordingPermission
     private let onVisibilityChange: (Bool) -> Void
 
     init(rootView: SettingsView, permission: AccessibilityPermission,
+         screenRecording: ScreenRecordingPermission,
          onVisibilityChange: @escaping (Bool) -> Void) {
         self.permission = permission
+        self.screenRecording = screenRecording
         self.onVisibilityChange = onVisibilityChange
         let window = NSWindow(contentRect: .zero, styleMask: [.titled, .closable],
                               backing: .buffered, defer: false)
@@ -171,6 +196,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
 
     func show() {
         permission.startMonitoring()
+        screenRecording.startMonitoring()
         onVisibilityChange(true)
         NSApp.activate()  // An agent app must activate for its window to come to the front.
         if window?.isVisible == false { window?.center() }
@@ -180,6 +206,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
 
     func windowWillClose(_ notification: Notification) {
         permission.stopMonitoring()
+        screenRecording.stopMonitoring()
         onVisibilityChange(false)
     }
 }

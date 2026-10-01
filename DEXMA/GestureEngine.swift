@@ -82,6 +82,8 @@ final class GestureEngine {
     private func setCapturing(_ capturing: Bool, swipeCompleted: Bool = false) {
         guard capturing != wasCapturing else { return }
         wasCapturing = capturing
+        // Fingers just landed on the top edge: a swipe may follow, get the screen warp ready.
+        if capturing { controller.prepareForMotion() }
         scrollGate?.setCapturing(capturing, swipeCompleted: swipeCompleted)
     }
 }

@@ -165,10 +165,11 @@ enum EffectTest {
             let ok = controller.state == (expectOpen ? .open : .closed)
                 && controller.progress == (expectOpen ? 1 : 0)
                 && !controller.effects.isActive
-                && controller.backdrop?.isShowing != true
+                && controller.bender?.debugGlassShowing != true
+                && controller.bender?.debugWarpShowing != true
                 && session.container.isHidden == !expectOpen
                 && (!expectOpen || panel.firstResponder === session.terminalView)
-            print("[effect] \(ok ? "OK  " : "FAIL") \(label): state=\(controller.state) progress=\(controller.progress) motion=\(controller.effects.isActive) glass=\(controller.backdrop?.isShowing == true) hidden=\(session.container.isHidden) key=\(panel.isKeyWindow)")
+            print("[effect] \(ok ? "OK  " : "FAIL") \(label): state=\(controller.state) progress=\(controller.progress) motion=\(controller.effects.isActive) glass=\(controller.bender?.debugGlassShowing == true) warp=\(controller.bender?.debugWarpShowing == true) hidden=\(session.container.isHidden) key=\(panel.isKeyWindow)")
         }
         func swipe(to delta: CGFloat, steps: Int, release velocity: CGFloat) async {
             controller.beginInteraction()
@@ -221,7 +222,7 @@ enum EffectTest {
             ("closing-96", 0.96, .init(stretch: 0.03, bulge: 0, energy: 1)),
             ("opening-15", 0.15, .init(stretch: 0.07, bulge: 0.02, energy: 1)),
         ]
-        print("[effect] backdrop lens available: \(controller.backdrop?.isAvailable == true)")
+        print("[effect] screen recording permitted: \(controller.bender?.debugPermitted == true)")
         print("[effect] poses: active \(controller.effects.isActive), snapshot \(controller.effects.snapshot.map { "\($0.image.width)x\($0.image.height)" } ?? "nil")")
         for (name, progress, effect) in poses {
             controller.debugPose(progress: progress, effect: effect)
@@ -240,7 +241,8 @@ enum EffectTest {
             try? await Task.sleep(for: .milliseconds(10))
             if !controller.debugDriver.isAnimating, !controller.effects.isActive { return }
         }
-        print("[effect] timed out waiting for rest")
+        let d = controller.debugDriver
+        print("[effect] timed out waiting for rest: animating=\(d.isAnimating) springing=\(d.isSpringing) held=\(d.isHeld) progress=\(controller.progress) state=\(controller.state) motion=\(controller.effects.isActive) frame=\(controller.effects.frame) screenVelocity=\(d.screenVelocity)")
     }
 
     /// The panel as the window server composited it. Looked up at runtime: the API is

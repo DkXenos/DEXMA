@@ -203,12 +203,20 @@ struct MotionEffectsTests {
         #expect(scale.width > 1 && scale.height > scale.width)
     }
 
-    @Test func stretchStaysInsideThePanelMargin() {
+    @Test func stretchNeverLeavesThePanelWindow() {
         let frame = MotionEffects.Frame(stretch: 0.07, bulge: 0.07, energy: 1)
-        for (width, height) in [(185.0, 32.0), (680.0, 400.0), (1100.0, 720.0)] {
-            let scale = frame.scale(width: width, height: height)
-            #expect(height * (scale.height - 1) <= NotchGeometry.margin)
-            #expect(width * (scale.width - 1) / 2 <= NotchGeometry.margin)
+        for expanded in [CGSize(width: 680, height: 400), CGSize(width: 1100, height: 720)] {
+            let geometry = NotchGeometry(screenFrame: CGRect(x: 0, y: 0, width: 3000, height: 2000),
+                                         notchRect: CGRect(x: 1400, y: 1968, width: 185, height: 32),
+                                         hasNotch: true, expandedSize: expanded)
+            let limit = geometry.silhouetteLimit()
+            // Fully open plus spring overshoot: the worst case for a fast open.
+            for progress in [0.0, 0.5, 1.0, 1.06, 1.25] as [CGFloat] {
+                let base = geometry.shape(at: progress)
+                let shape = base.scaled(by: frame.scale(width: base.width, height: base.height, limit: limit))
+                #expect(shape.height <= geometry.panelFrame.height - 1 + 0.001)
+                #expect(shape.width <= limit.width + 0.001)
+            }
         }
     }
 

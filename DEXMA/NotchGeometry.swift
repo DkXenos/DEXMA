@@ -6,6 +6,8 @@ struct NotchGeometry: Equatable {
     static let defaultExpandedSize = CGSize(width: 680, height: 400)
     /// Transparent slack around the expanded shape for its ears and spring overshoot.
     static let margin: CGFloat = 40
+    /// Concave flare where the expanded silhouette meets the screen edge.
+    static let earRadius: CGFloat = 12
     /// The pill shown on screens without a notch.
     static let pillWidth: CGFloat = 150
 
@@ -60,6 +62,14 @@ struct NotchGeometry: Equatable {
         notchRect.midX - panelFrame.minX
     }
 
+    /// The biggest silhouette (body width, height) the panel window can show without cutting
+    /// it off, with `inset` points to spare on each side (beyond the ears) and below.
+    func silhouetteLimit(inset: CGFloat = 1) -> CGSize {
+        let panel = panelFrame.size
+        let halfWidth = min(notchCenterXInPanel, panel.width - notchCenterXInPanel)
+        return CGSize(width: 2 * (halfWidth - inset - Self.earRadius), height: panel.height - inset)
+    }
+
     /// The silhouette at `progress` (0 = notch, 1 = expanded; may overshoot either way).
     func shape(at progress: CGFloat) -> NotchShape {
         // Closed: slightly rounder than the physical notch so no corner pixel peeks out.
@@ -67,11 +77,22 @@ struct NotchGeometry: Equatable {
         let closedRadius = hasNotch ? 9 : notchRect.height / 2
         let p = max(progress, 0)
         return NotchShape(
-            width: lerp(notchRect.width, expandedSize.width, p),
-            height: lerp(notchRect.height, expandedSize.height, p),
+            width: Self.overshoot(lerp(notchRect.width, expandedSize.width, p),
+                                  past: expandedSize.width, upTo: silhouetteLimit().width),
+            height: Self.overshoot(lerp(notchRect.height, expandedSize.height, p),
+                                   past: expandedSize.height, upTo: silhouetteLimit().height),
             bottomRadius: lerp(closedRadius, 26, min(p, 1)),
-            earRadius: lerp(0, 12, min(p, 1)),
+            earRadius: lerp(0, Self.earRadius, min(p, 1)),
             centerX: notchCenterXInPanel)
+    }
+
+    /// Past fully open (spring overshoot after a fast flick), growth eases into the room the
+    /// window has instead of running past its edge, where it would be cut off in a straight
+    /// line. Small overshoots are unchanged (tanh x ≈ x); at or below `size`, nothing changes.
+    private static func overshoot(_ value: CGFloat, past size: CGFloat, upTo limit: CGFloat) -> CGFloat {
+        let room = limit - size
+        guard value > size, room > 0 else { return value }
+        return size + room * CGFloat(tanh(Double((value - size) / room)))
     }
 
     /// Where the terminal sits inside the panel (top-left origin): below the notch strip,

@@ -68,6 +68,13 @@ final class SpringDriver: NSObject {
         displayLink?.isPaused = false
     }
 
+    /// Starts frames (for `onFrame`) if the link is resting; the spring itself stays put.
+    func wake() {
+        guard displayLink?.isPaused == true else { return }
+        lastTimestamp = nil
+        displayLink?.isPaused = false
+    }
+
     /// Jump straight to `value` (e.g. following a finger), stopping any animation.
     func set(_ value: CGFloat) {
         let now = CACurrentMediaTime()

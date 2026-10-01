@@ -17,12 +17,14 @@ final class MotionEffects {
         /// How much wider and taller the silhouette is, about its top-centre anchor (the notch
         /// hangs from the screen edge). Stretch is roughly volume-preserving (taller, narrower);
         /// the bulge swells both ways, more downward since the notch is so short. Exactly 1 × 1
-        /// at rest. Clamped so the silhouette stays inside the panel's transparent margin.
-        func scale(width: CGFloat, height: CGFloat) -> CGSize {
+        /// at rest. Never grows the silhouette past `limit` (the most the panel window can
+        /// show, see `NotchGeometry.silhouetteLimit`), so a fast open is never cut off by the
+        /// window's edge.
+        func scale(width: CGFloat, height: CGFloat,
+                   limit: CGSize = CGSize(width: CGFloat.infinity, height: .infinity)) -> CGSize {
             guard stretch != 0 || bulge != 0 else { return CGSize(width: 1, height: 1) }
-            let room = 0.9 * NotchGeometry.margin
-            let sx = min((1 + bulge) * (1 - 0.5 * stretch), 1 + 2 * room / max(width, 1))
-            let sy = min((1 + 1.6 * bulge) * (1 + stretch), 1 + room / max(height, 1))
+            let sx = min((1 + bulge) * (1 - 0.5 * stretch), max(1, limit.width / max(width, 1)))
+            let sy = min((1 + 1.6 * bulge) * (1 + stretch), max(1, limit.height / max(height, 1)))
             return CGSize(width: sx, height: sy)
         }
     }

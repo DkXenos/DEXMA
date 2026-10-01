@@ -14,6 +14,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let hover = HoverMonitor()
     private let scrollBlocker = ScrollBlocker()
     let accessibility = AccessibilityPermission()
+    let screenRecording = ScreenRecordingPermission()
     private var onboarding: OnboardingWindowController?
     private var settingsWindow: SettingsWindowController?
     private var statusItem: StatusItemController?
@@ -42,7 +43,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         hostingView.frame = content.bounds
         hostingView.autoresizingMask = [.width, .height]
         content.addSubview(hostingView)
-        controller.backdrop = BackdropLens(in: content)
+        controller.bender = ScreenBender(panel: panel, container: content,
+                                         geometry: { [weak controller] in controller?.geometry ?? geometry })
         panel.contentView = content
         panel.acceptsMouseMovedEvents = true  // For the hover monitor while peeking.
         // Pre-warm: the panel stays on screen from launch. Closed, it hides under the notch.
@@ -61,6 +63,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return Self.hoverZone(controller)
         }
         hover.onChange = { [weak controller] inside in controller?.setHovering(inside) }
+        hover.onMove = { [weak controller] point in controller?.bender?.pointerMoved(to: point) }
 
         settings.onChange = { [weak self] in self?.applySettings() }
         applySettings()
@@ -101,13 +104,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc func showSettings(_ sender: Any?) {
         if settingsWindow == nil {
             let view = SettingsView(
-                settings: settings, permission: accessibility, preview: touchPreview,
+                settings: settings, permission: accessibility, screenRecording: screenRecording,
+                preview: touchPreview,
                 gesturesAvailable: { [weak self] in self?.areGesturesRunning ?? false },
                 hotKeyWorking: { [weak self] in self?.isHotKeyWorking ?? false },
                 onRecordingChange: { [weak self] recording in self?.isRecordingShortcut = recording },
                 showWelcome: { [weak self] in self?.showOnboarding() })
             settingsWindow = SettingsWindowController(
-                rootView: view, permission: accessibility,
+                rootView: view, permission: accessibility, screenRecording: screenRecording,
                 onVisibilityChange: { [weak self] visible in self?.setTouchPreview(visible) })
         }
         settingsWindow?.show()
@@ -123,6 +127,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func showOnboarding() {
         if onboarding == nil {
             onboarding = OnboardingWindowController(permission: accessibility,
+                                                    screenRecording: screenRecording,
                                                     shortcut: settings.hotKey.display) {
                 UserDefaults.standard.set(true, forKey: "didShowOnboarding")
             }
@@ -140,6 +145,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         controller.animationDuration = settings.animationDuration
         controller.bounce = settings.bounce
         controller.effectIntensity = settings.effectIntensity
+        controller.bender?.isWarpEnabled = settings.screenWarp
         if let geometry = makeGeometry() { controller.updateGeometry(geometry) }
 
         gestures.parameters = GestureParameters(edgeZone: settings.edgeZone,

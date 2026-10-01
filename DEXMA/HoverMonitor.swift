@@ -7,6 +7,8 @@ final class HoverMonitor {
     /// Hot zone in global AppKit coordinates, re-read on every move (it follows the state).
     var zone: () -> CGRect = { .zero }
     var onChange: ((Bool) -> Void)?
+    /// Every pointer move (global AppKit coordinates), for the pointer lens.
+    var onMove: ((NSPoint) -> Void)?
 
     private var monitors: [Any] = []
     private var isInside = false
@@ -36,7 +38,9 @@ final class HoverMonitor {
     }
 
     private func check() {
-        let inside = zone().contains(NSEvent.mouseLocation)
+        let location = NSEvent.mouseLocation
+        onMove?(location)
+        let inside = zone().contains(location)
         guard inside != isInside else { return }
         isInside = inside
         onChange?(inside)

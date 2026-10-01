@@ -27,9 +27,26 @@ nonisolated struct EffectTuning: Equatable {
     /// RGB split at the edge at full speed. Keep ≤ 1.5: felt more than seen.
     var aberration: CGFloat = 1.5
 
-    /// How far past the silhouette the screen behind it is bent (Liquid Glass ring, macOS 26),
-    /// at full speed mid-way. 0 turns the backdrop bending off.
-    var backdropRing: CGFloat = 16
+    // MARK: Screen warp (Screen Recording; see ScreenBender)
+    /// How far the real screen is pushed out (opening) or pulled in (closing) right at the
+    /// silhouette's edge, at full speed mid-way.
+    var screenWarp: CGFloat = 14
+    /// How far from the edge the screen still bends.
+    var screenWarpReach: CGFloat = 46
+    /// Colour warp: red bends this much further than green, blue this much less.
+    var screenChroma: CGFloat = 0.25
+    /// Pointer lens near the notch: magnification at its centre (0.22 ≈ 1.3×)…
+    var hoverLens: CGFloat = 0.22
+    var hoverLensRadius: CGFloat = 70
+    /// …starting this far from the notch, full strength over it.
+    var hoverReach: CGFloat = 120
+    /// The screen right around the notch pushed out this much while the pointer is over it.
+    var hoverPush: CGFloat = 3
+
+    /// Fallback without Screen Recording (macOS 26): how far past the silhouette the Liquid
+    /// Glass ring bends the screen at full speed. Kept narrow: wide, fast-changing glass
+    /// smears into blur. 0 turns it off.
+    var backdropRing: CGFloat = 10
 
     // MARK: Light
     /// Peak opacity of the specular line that sweeps down the rim as the panel opens.
@@ -55,6 +72,9 @@ nonisolated struct EffectTuning: Equatable {
         t.anticipation *= k
         t.refraction *= k
         t.backdropRing *= k
+        t.screenWarp *= k
+        t.hoverLens *= k
+        t.hoverPush *= k
         t.aberration *= k
         t.highlight *= k
         t.glow *= k
@@ -64,6 +84,6 @@ nonisolated struct EffectTuning: Equatable {
     /// False when scaled to nothing: the motion layer and its shaders are skipped entirely.
     var isVisible: Bool {
         maxStretch > 0 || refraction > 0 || aberration > 0 || highlight > 0 || glow > 0
-            || backdropRing > 0
+            || backdropRing > 0 || screenWarp > 0 || hoverLens > 0
     }
 }

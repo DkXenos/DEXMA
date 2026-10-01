@@ -60,6 +60,8 @@ final class AppSettings {
     var bounce: Double { didSet { save(bounce, "bounce") } }
     /// Liquid lens effect while opening/closing: 0 = off … 1 = full (`EffectTuning.full`).
     var effectIntensity: Double { didSet { save(effectIntensity, "effectIntensity") } }
+    /// Bend the real screen around the notch (needs Screen Recording; Liquid Glass otherwise).
+    var screenWarp: Bool { didSet { save(screenWarp, "screenWarp") } }
     var escClosesPanel: Bool { didSet { save(escClosesPanel, "escClosesPanel") } }
     var closesOnFocusLoss: Bool { didSet { save(closesOnFocusLoss, "closesOnFocusLoss") } }
     var hoverToPeek: Bool { didSet { save(hoverToPeek, "hoverToPeek") } }
@@ -85,6 +87,7 @@ final class AppSettings {
         animationDuration = double("animationDuration", 0.45, Self.durationRange)
         bounce = double("bounce", 0.20, Self.bounceRange)
         effectIntensity = double("effectIntensity", 1, Self.effectIntensityRange)
+        screenWarp = bool("screenWarp", true)
         escClosesPanel = bool("escClosesPanel", true)
         closesOnFocusLoss = bool("closesOnFocusLoss", true)
         hoverToPeek = bool("hoverToPeek", true)

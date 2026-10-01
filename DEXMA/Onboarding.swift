@@ -3,6 +3,7 @@ import SwiftUI
 
 struct OnboardingView: View {
     let permission: AccessibilityPermission
+    let screenRecording: ScreenRecordingPermission
     let shortcut: String
     let onDone: () -> Void
 
@@ -59,6 +60,32 @@ struct OnboardingView: View {
                 .padding(6)
             }
 
+            GroupBox {
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack {
+                        Text("Screen Recording (optional)").font(.headline)
+                        Spacer()
+                        if screenRecording.isGranted {
+                            Label("Granted", systemImage: "checkmark.circle.fill")
+                                .foregroundStyle(.green)
+                        }
+                    }
+                    Text("""
+                        Lets the notch bend and colour-split the screen around it as it opens, \
+                        closes and when the pointer comes near. DEXMA only looks at the area \
+                        around the notch, never saves it, and only while it's moving; macOS \
+                        shows its recording indicator then.
+                        """)
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    if !screenRecording.isGranted {
+                        Button("Allow Screen Recording…") { screenRecording.requestAccess() }
+                    }
+                }
+                .padding(6)
+            }
+
             HStack {
                 Text("Without it everything still works; the page under the cursor may scroll a little as you swipe.")
                     .font(.caption)
@@ -76,10 +103,13 @@ struct OnboardingView: View {
 
 final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
     private let permission: AccessibilityPermission
+    private let screenRecording: ScreenRecordingPermission
     private let onFinish: () -> Void
 
-    init(permission: AccessibilityPermission, shortcut: String, onFinish: @escaping () -> Void) {
+    init(permission: AccessibilityPermission, screenRecording: ScreenRecordingPermission,
+         shortcut: String, onFinish: @escaping () -> Void) {
         self.permission = permission
+        self.screenRecording = screenRecording
         self.onFinish = onFinish
         let window = NSWindow(contentRect: .zero, styleMask: [.titled, .closable],
                               backing: .buffered, defer: false)
@@ -87,7 +117,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
         window.isReleasedWhenClosed = false
         super.init(window: window)
         window.contentViewController = NSHostingController(rootView: OnboardingView(
-            permission: permission, shortcut: shortcut,
+            permission: permission, screenRecording: screenRecording, shortcut: shortcut,
             onDone: { [weak self] in
                 self?.onFinish()
                 self?.window?.close()
@@ -102,6 +132,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
 
     func show() {
         permission.startMonitoring()
+        screenRecording.startMonitoring()
         NSApp.activate()  // An agent app must activate for its window to come to the front.
         window?.center()
         showWindow(nil)
@@ -116,5 +147,6 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
 
     func windowWillClose(_ notification: Notification) {
         permission.stopMonitoring()
+        screenRecording.stopMonitoring()
     }
 }
