@@ -20,6 +20,11 @@ final class ScreenBender {
             if isWarpEnabled != oldValue { stoppedByUser = false }
         }
     }
+    /// Quality: the warp also stays around the swollen/open notch, and the pointer lens shows.
+    /// Off (Balanced): capture runs only around motions.
+    var warpsAtRest = true {
+        didSet { if !warpsAtRest { pointerTarget = 0; restingAmount = 0 } }
+    }
     var tuning = EffectTuning.full
     /// Whether the pointer lens may show (not while the terminal is open).
     var allowsPointer: () -> Bool = { true }
@@ -109,7 +114,7 @@ final class ScreenBender {
         let distance = (dx * dx + dy * dy).squareRoot()
         let reach = max(tuning.hoverReach, 1)
         let closeness = 1 - smoothstep(distance / reach)
-        let target = allowsPointer() && canWarp && tuning.hoverLens > 0 ? closeness : 0
+        let target = warpsAtRest && allowsPointer() && canWarp && tuning.hoverLens > 0 ? closeness : 0
         let frame = panel.frame
         pointerGoal = CGPoint(x: point.x - frame.minX, y: frame.maxY - point.y)
         if pointerStrength == 0 { pointerPoint = pointerGoal }
@@ -127,7 +132,7 @@ final class ScreenBender {
         lastStepTime = CACurrentMediaTime()
         capture.setFrameRate(120)  // Moving: every display frame.
         let pointerBusy = stepPointer(dt)
-        restingAmount = motion?.restingPush ?? 0
+        restingAmount = warpsAtRest ? motion?.restingPush ?? 0 : 0
         let pushing = (motion?.strength ?? 0) * (motion?.direction ?? 0) * tuning.screenWarp
             + restingAmount + tuning.hoverPush * pointerStrength
         let lens = tuning.hoverLens * pointerStrength

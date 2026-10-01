@@ -137,6 +137,31 @@ enum WarpTest {
             _ = await notch.waitForRest()
             try? await Task.sleep(for: .seconds(2.5))
             report.line("closed 2.5 s: capture running \(capture.isRunning ? "STILL" : "no (stopped)"), warp drawn \(bender.debugWarpShowing ? "STILL" : "no")")
+            // 7. The Settings modes. Balanced: the warp only while moving (capture stops after
+            // opening). Performance: no capture at all.
+            bender.warpsAtRest = false
+            notch.open()
+            try? await Task.sleep(for: .milliseconds(150))
+            let balancedMoving = capture.isRunning
+            _ = await notch.waitForRest()
+            try? await Task.sleep(for: .seconds(2.5))
+            report.line("Balanced: capture while opening \(balancedMoving ? "yes" : "NO"); open at rest 2.5 s: capture \(capture.isRunning ? "STILL" : "stopped"), warp \(bender.debugWarpShowing ? "STILL drawn" : "gone")")
+            notch.close()
+            _ = await notch.waitForRest()
+            try? await Task.sleep(for: .seconds(2))
+            bender.isWarpEnabled = false
+            notch.open()
+            var everRan = false
+            for _ in 0..<60 {
+                try? await Task.sleep(for: .milliseconds(10))
+                everRan = everRan || capture.isRunning
+            }
+            _ = await notch.waitForRest()
+            notch.close()
+            _ = await notch.waitForRest()
+            report.line("Performance: capture ran during open/close: \(everRan ? "YES" : "no"), warp drawn \(bender.debugWarpShowing ? "YES" : "no")")
+            bender.isWarpEnabled = true
+            bender.warpsAtRest = true
             report.line("done")
             NSApp.terminate(nil)
         }

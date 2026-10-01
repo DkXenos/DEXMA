@@ -43,8 +43,12 @@ app you were using. When closed, DEXMA is invisible.
   the notch moves; at
   rest nothing changes and text stays crisp. The swipe gives Force Touch ticks when it passes
   the point of no return and when it lands. Set the strength in
-  *Settings → Animation → Effect intensity* (it scales the tabs' and buttons' glass too); Off,
-  or Reduce Motion, turns the lens effect off.
+  *Settings → Look & performance → Glass effect strength* (it scales the tabs' and buttons'
+  glass too); Off, or Reduce Motion, turns the lens effect off.
+- **Settings** (from the menu bar item, next to Quit DEXMA): the open panel's width and height
+  (live), the glass strength, and a Performance / Balanced / Quality slider for the screen
+  warp: Performance records nothing (no recording indicator, least CPU), Balanced bends the
+  screen only while the notch moves, Quality also keeps it bent around the open notch.
 
 ## Requirements
 

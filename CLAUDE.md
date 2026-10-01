@@ -148,7 +148,7 @@ Layers — keep them separated:
 **Debug** (DEBUG only) — `DebugHarness` dispatches the launch flags to `SelfTest`
 (`-selftest`), `SnapshotTest` (`-snapshot <dir>`), `EffectTest` (`-effecttest <dir>`),
 `TabTest` (`-tabtest`), `SwipeTest` (`-swipetest`), `HoverTest` (`-hovertest`, `-bandshot`),
-`ClaudeProbe` (`-claudeprobe`) and `WarpTest` (`-warptest <dir>`, `-captureidle <s>`); `Support/` holds `DebugImages`,
+`ClaudeProbe` (`-claudeprobe`), `SizeTest` (`-sizetest`) and `WarpTest` (`-warptest <dir>`, `-captureidle <s>`); `Support/` holds `DebugImages`,
 `FramePacingProbe` and `NotchViewModel.waitForRest()` (see *Debug snapshots*).
 
 ## Tab UI (the spec, 2026-10-01, branch `feature/claude-tab`)
@@ -321,6 +321,8 @@ One component (`Features/WebTab/`), two configurations (`WebTabConfiguration`):
   selection indicator (branch `feature/tabs`).
 - [x] 14. Tab swiping, tab UI refresh, Claude tab (branch `feature/claude-tab`, from
   `feature/tabs`; pushed, not merged: the user tests first).
+- [x] 15. Settings: open panel size first, "Look & performance" (glass effect strength,
+  Performance / Balanced / Quality screen-warp slider) (same branch).
 
 The user asked (2026-10-01) to run phases 2–8 without stopping between them: per phase, read
 package sources, build to 0 errors/0 warnings, launch-check, `git commit -m "Phase N: …"`,
@@ -517,6 +519,16 @@ update Progress below.
   the user's account / hardware): Google's password step, email magic link, staying signed in
   after a restart, real drag of an image.
 
+- **Phase 15 (settings):** the user (2026-10-01) wanted the open panel's size adjustable, the
+  glass strength, and the screen warp as a Performance ↔ Quality slider, all in the Settings
+  window (the menu bar item keeps Settings… and Quit DEXMA). `RenderQuality` (Core/Settings):
+  Performance = no capture at all; Balanced = the warp only while the notch moves
+  (`ScreenBender.warpsAtRest` off: no resting warp, no pointer lens); Quality = also the resting
+  warp and the pointer lens. Replaces the `screenWarp` switch (on → Quality, off →
+  Performance). Verified: `-sizetest` (smallest 480 × 260, default, largest 1100 × 720: card,
+  pages, web views, terminal follow; the pill drops to icons when labels don't fit),
+  `-warptest` (Balanced stops capture once open, Performance never captures).
+
 ## Hardware test checklist (needs the user)
 - Tabs: ⌘1/⌘2/⌘L, clicking segments, focus after reopening (page vs field), Esc on both tabs.
 - Search: a Google search, typing in Google's own fields, IME in the field, link clicks,
@@ -529,6 +541,8 @@ update Progress below.
   indicator).
 - Terminal typing stays smooth while hovering the band.
 - The open/close effect on all three tabs feels as before (no blank frames).
+- Settings: open panel size sliders (live), glass effect strength, Performance / Balanced /
+  Quality (recording indicator: never / only while moving / while open).
 - Swipe on each tab: slow, fast flick, half swipe and release, vertical scroll still works,
   horizontal scrolling inside web pages; the pill, indicator, dots and context following it.
 - Terminal context: cwd updates after `cd`, the running dot during `sleep 5`.

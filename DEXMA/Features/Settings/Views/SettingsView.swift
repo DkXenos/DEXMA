@@ -8,6 +8,60 @@ struct SettingsView: View {
         let launchesAtLogin = viewModel.launchesAtLogin
 
         Form {
+            Section {
+                LabeledContent("Width") {
+                    Slider(value: $settings.panelWidth, in: AppSettings.panelWidthRange, step: 10)
+                    Text("\(Int(settings.panelWidth)) pt").monospacedDigit().frame(width: 56, alignment: .trailing)
+                }
+                LabeledContent("Height") {
+                    Slider(value: $settings.panelHeight, in: AppSettings.panelHeightRange, step: 10)
+                    Text("\(Int(settings.panelHeight)) pt").monospacedDigit().frame(width: 56, alignment: .trailing)
+                }
+            } header: {
+                Text("Open panel size")
+            } footer: {
+                Text("How big the notch grows when it opens. Changes apply right away, even while it's open.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+
+            Section("Look & performance") {
+                Slider(value: $settings.effectIntensity, in: AppSettings.effectIntensityRange) {
+                    Text("Glass effect strength")
+                    Text("The liquid lens as the notch opens and closes, and on the tabs and buttons under the pointer.")
+                } minimumValueLabel: { Text("Off") } maximumValueLabel: { Text("Full") }
+                LabeledContent {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Slider(value: Binding(get: { Double(settings.renderQuality.rawValue) },
+                                              set: { settings.renderQuality = RenderQuality(rawValue: Int($0.rounded())) ?? .quality }),
+                               in: 0...Double(RenderQuality.allCases.count - 1), step: 1) {
+                            EmptyView()
+                        } minimumValueLabel: { Text("Performance") } maximumValueLabel: { Text("Quality") }
+                        Text("\(settings.renderQuality.title): \(settings.renderQuality.summary)")
+                            .font(.caption).foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                } label: {
+                    Text("Screen warp")
+                    Text("Bends what's behind the notch, like the screen around the iPhone's Camera Control.")
+                }
+                if settings.renderQuality.warps {
+                    LabeledContent {
+                        if viewModel.isScreenRecordingGranted {
+                            Label("On", systemImage: "checkmark.circle.fill").foregroundStyle(.green)
+                        } else {
+                            Button("Allow Screen Recording…", action: viewModel.requestScreenRecording)
+                        }
+                    } label: {
+                        Text("Screen Recording")
+                        Text("DEXMA only looks at the area around the notch and never saves it. Without it, a Liquid Glass edge bends the screen instead (macOS 26).")
+                    }
+                }
+                if viewModel.reducesMotion {
+                    Text("Reduce Motion is on in System Settings, so animations are short, don't bounce, and skip the lens effect.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+            }
+
             Section("General") {
                 LabeledContent("Shortcut") {
                     ShortcutRecorder(combo: $settings.hotKey, onRecordingChange: viewModel.setRecordingShortcut)
@@ -34,25 +88,6 @@ struct SettingsView: View {
                 }
             }
 
-            Section("Panel size") {
-                LabeledContent("Width") {
-                    Slider(value: $settings.panelWidth, in: AppSettings.panelWidthRange, step: 10)
-                    Text("\(Int(settings.panelWidth)) pt").monospacedDigit().frame(width: 56, alignment: .trailing)
-                }
-                LabeledContent("Height") {
-                    Slider(value: $settings.panelHeight, in: AppSettings.panelHeightRange, step: 10)
-                    Text("\(Int(settings.panelHeight)) pt").monospacedDigit().frame(width: 56, alignment: .trailing)
-                }
-            }
-
-            Section("Claude tab") {
-                LabeledContent("Page zoom") {
-                    Slider(value: $settings.claudeZoom, in: AppSettings.claudeZoomRange, step: 0.05)
-                    Text("\(Int((settings.claudeZoom * 100).rounded())) %").monospacedDigit()
-                        .frame(width: 56, alignment: .trailing)
-                }
-            }
-
             Section("Animation") {
                 Slider(value: $settings.animationDuration, in: AppSettings.durationRange) {
                     Text("Speed")
@@ -60,33 +95,13 @@ struct SettingsView: View {
                 Slider(value: $settings.bounce, in: AppSettings.bounceRange) {
                     Text("Bounciness")
                 } minimumValueLabel: { Text("None") } maximumValueLabel: { Text("Lots") }
-                Slider(value: $settings.effectIntensity, in: AppSettings.effectIntensityRange) {
-                    Text("Effect intensity")
-                } minimumValueLabel: { Text("Off") } maximumValueLabel: { Text("Full") }
-                Toggle(isOn: $settings.screenWarp) {
-                    Text("Bend the screen around the notch")
-                    Text("""
-                        Warps and colour-splits what's behind the notch while it moves, around \
-                        the pointer near it, and around the notch while it's swollen or open. Needs Screen Recording; macOS shows its \
-                        recording indicator while it runs. Without it, a Liquid Glass edge \
-                        bends the screen instead (macOS 26).
-                        """)
-                }
-                if settings.screenWarp {
-                    LabeledContent {
-                        if viewModel.isScreenRecordingGranted {
-                            Label("On", systemImage: "checkmark.circle.fill").foregroundStyle(.green)
-                        } else {
-                            Button("Allow Screen Recording…", action: viewModel.requestScreenRecording)
-                        }
-                    } label: {
-                        Text("Screen Recording")
-                        Text("DEXMA only looks at the area around the notch, never saves it, and only while it moves or the pointer is near.")
-                    }
-                }
-                if viewModel.reducesMotion {
-                    Text("Reduce Motion is on in System Settings, so animations are short, don't bounce, and skip the lens effect.")
-                        .font(.caption).foregroundStyle(.secondary)
+            }
+
+            Section("Claude tab") {
+                LabeledContent("Page zoom") {
+                    Slider(value: $settings.claudeZoom, in: AppSettings.claudeZoomRange, step: 0.05)
+                    Text("\(Int((settings.claudeZoom * 100).rounded())) %").monospacedDigit()
+                        .frame(width: 56, alignment: .trailing)
                 }
             }
 

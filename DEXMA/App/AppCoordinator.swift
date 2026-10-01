@@ -108,7 +108,8 @@ final class AppCoordinator: WindowRouter {
         notch.bounce = settings.bounce
         notch.effectIntensity = settings.effectIntensity
         notch.claude.session.pageZoom = settings.claudeZoom
-        bender?.isWarpEnabled = settings.screenWarp
+        bender?.isWarpEnabled = settings.renderQuality.warps
+        bender?.warpsAtRest = settings.renderQuality.warpsAtRest
         if let geometry = geometryProvider.makeGeometry() { notch.updateGeometry(geometry) }
 
         gestures.parameters = GestureParameters(edgeZone: settings.edgeZone,

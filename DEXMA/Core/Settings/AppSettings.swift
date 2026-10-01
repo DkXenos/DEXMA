@@ -31,8 +31,9 @@ final class AppSettings {
     var bounce: Double { didSet { save(bounce, "bounce") } }
     /// Liquid lens effect while opening/closing: 0 = off … 1 = full (`EffectTuning.full`).
     var effectIntensity: Double { didSet { save(effectIntensity, "effectIntensity") } }
-    /// Bend the real screen around the notch (needs Screen Recording; Liquid Glass otherwise).
-    var screenWarp: Bool { didSet { save(screenWarp, "screenWarp") } }
+    /// How much of the screen warp runs (Performance / Balanced / Quality). Replaces the old
+    /// on/off "screenWarp" switch (on → Quality, off → Performance).
+    var renderQuality: RenderQuality { didSet { save(renderQuality.rawValue, "renderQuality") } }
     /// The Claude tab's page zoom (1 = 100 %): lower fits more in the panel.
     var claudeZoom: Double { didSet { save(claudeZoom, "claudeZoom") } }
     var escClosesPanel: Bool { didSet { save(escClosesPanel, "escClosesPanel") } }
@@ -60,7 +61,11 @@ final class AppSettings {
         animationDuration = double("animationDuration", 0.45, Self.durationRange)
         bounce = double("bounce", 0.20, Self.bounceRange)
         effectIntensity = double("effectIntensity", 1, Self.effectIntensityRange)
-        screenWarp = bool("screenWarp", true)
+        if d.object(forKey: "renderQuality") != nil {
+            renderQuality = RenderQuality(rawValue: d.integer(forKey: "renderQuality")) ?? .quality
+        } else {
+            renderQuality = bool("screenWarp", true) ? .quality : .performance
+        }
         claudeZoom = double("claudeZoom", 1, Self.claudeZoomRange)
         escClosesPanel = bool("escClosesPanel", true)
         closesOnFocusLoss = bool("closesOnFocusLoss", true)
