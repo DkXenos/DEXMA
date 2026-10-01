@@ -38,8 +38,10 @@ nonisolated struct EffectTuning: Equatable {
     /// Pointer lens near the notch: magnification at its centre (0.22 ≈ 1.3×)…
     var hoverLens: CGFloat = 0.22
     var hoverLensRadius: CGFloat = 70
-    /// …starting this far from the notch, full strength over it.
-    var hoverReach: CGFloat = 120
+    /// …starting this far from the notch, full strength over it. Small on purpose: anything
+    /// that comes near starts screen capture (and macOS's recording indicator), and the menu
+    /// bar beside the notch is busy.
+    var hoverReach: CGFloat = 28
     /// The screen right around the notch pushed out this much while the pointer is over it.
     var hoverPush: CGFloat = 3
 

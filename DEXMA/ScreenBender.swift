@@ -22,7 +22,10 @@ final class ScreenBender {
 
     /// The Settings switch; the warp also needs the permission.
     var isWarpEnabled = true {
-        didSet { if !isWarpEnabled { stopCapture() } }
+        didSet {
+            if !isWarpEnabled { stopCapture() }
+            if isWarpEnabled != oldValue { stoppedByUser = false }
+        }
     }
     var tuning = EffectTuning.full
     /// Whether the pointer lens may show (not while the terminal is open).
@@ -38,6 +41,9 @@ final class ScreenBender {
     /// Cached: asking TCC takes ~10 ms, far too long for the main thread at a motion's start.
     private var permitted = false
     private var permissionCheckPending = false
+    /// The user stopped capture from macOS's recording indicator: respect that until DEXMA
+    /// restarts or the Settings switch is turned off and on (the glass edge stands in).
+    private var stoppedByUser = false
     private var lastActivity: CFTimeInterval = 0
     private var stopCheckPending = false
     /// Fades the warp in once the first captured frame is there, so it never pops on.
@@ -54,6 +60,10 @@ final class ScreenBender {
         warpView = ScreenWarpView(frame: container.bounds)
         warpView.autoresizingMask = [.width, .height]
         container.addSubview(warpView, positioned: .below, relativeTo: nil)
+        capture.onUserStopped = { [weak self] in
+            self?.stoppedByUser = true
+            self?.warpView.hide()
+        }
         refreshPermission()
     }
 
@@ -75,7 +85,7 @@ final class ScreenBender {
     }
 
     /// Screen Recording is allowed and the switch is on: the real warp can run.
-    var canWarp: Bool { isWarpEnabled && permitted && warpView.isUsable }
+    var canWarp: Bool { isWarpEnabled && permitted && !stoppedByUser && warpView.isUsable }
 
     // MARK: Intent
 
@@ -202,11 +212,11 @@ final class ScreenBender {
     }
 
     /// Stops the stream (and macOS's recording indicator) once nothing has needed it for a
-    /// few seconds.
+    /// moment.
     private func scheduleStopCheck() {
         guard !stopCheckPending else { return }
         stopCheckPending = true
-        let idle: CFTimeInterval = 3
+        let idle: CFTimeInterval = 1.5
         DispatchQueue.main.asyncAfter(deadline: .now() + idle) { [weak self] in
             guard let self else { return }
             self.stopCheckPending = false
@@ -230,6 +240,12 @@ final class ScreenBender {
     }
 
     #if DEBUG
+    /// Keeps capture running (as if something needed it) — for measuring its cost.
+    func debugKeepCapturing() {
+        prepare()
+        noteActivity()
+    }
+
     var debugFullCoverage = false
 
     /// Posed frames draw at full strength straight away.

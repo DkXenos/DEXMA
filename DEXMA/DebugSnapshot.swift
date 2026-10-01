@@ -13,6 +13,10 @@ enum DebugSnapshot {
             selfTest(panel: panel, controller: controller, session: session)
             return
         }
+        if let index = arguments.firstIndex(of: "-captureidle"), index + 1 < arguments.count {
+            WarpTest.keepCapturing(controller: controller, seconds: Double(arguments[index + 1]) ?? 20)
+            return
+        }
         if let index = arguments.firstIndex(of: "-warptest"), index + 1 < arguments.count {
             WarpTest.run(panel: panel, controller: controller, dir: URL(fileURLWithPath: arguments[index + 1]))
             return

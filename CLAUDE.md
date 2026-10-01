@@ -82,8 +82,12 @@ like a third-party app.
   around the silhouette with an RGB split, transparent where the bend is < ½ pt, so it meets
   the real screen seamlessly; the pointer lens magnifies around the cursor near the notch
   (hover monitor → `pointerMoved`, keeps the display link awake). Capture starts on intent
-  (pointer within `hoverReach`, fingers armed in the edge zone, open/close) and stops 3 s
-  after the last use; macOS shows its recording indicator meanwhile. Without the permission:
+  (pointer within `hoverReach` = 28 pt of the notch — 120 pt kept it running during normal
+  menu bar use — fingers armed in the edge zone, open/close) and stops 1.5 s after the last
+  use; macOS shows its recording indicator meanwhile (no app can hide it). If the user stops
+  it from that indicator, the warp stays off (glass fallback) until relaunch or the switch is
+  toggled. Cost while capturing with nothing moving: DEXMA ~1.3 % CPU (Debug), replayd
+  ~1.6 %, WindowServer unchanged; 0 when not capturing (`-captureidle <s>` probe). Without the permission:
   the Liquid Glass ring (narrow, clamped to the window). `CGPreflightScreenCaptureAccess`
   costs ~10 ms: only ever called off the main thread (cached).
 - Overshoot past fully open eases into the window's room (`NotchGeometry.overshoot`, tanh) and

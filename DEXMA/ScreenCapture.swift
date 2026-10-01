@@ -33,6 +33,8 @@ final class ScreenCapture: NSObject, SCStreamOutput, SCStreamDelegate {
     private(set) var requestTime: CFTimeInterval = 0
 
     var isRunning: Bool { stream != nil }
+    /// The user stopped the stream from macOS's recording indicator.
+    var onUserStopped: (() -> Void)?
 
     /// The newest frame and a number that changes whenever it does.
     func latestFrame() -> (buffer: CVPixelBuffer, generation: Int)? {
@@ -158,11 +160,13 @@ final class ScreenCapture: NSObject, SCStreamOutput, SCStreamDelegate {
     nonisolated func stream(_ stream: SCStream, didStopWithError error: Error) {
         Self.logger.error("Screen capture stopped: \(error.localizedDescription, privacy: .public)")
         let stopped = ObjectIdentifier(stream)
+        let byUser = (error as NSError).code == SCStreamError.Code.userStopped.rawValue
         DispatchQueue.main.async { [weak self] in
             guard let self, self.stream.map(ObjectIdentifier.init) == stopped else { return }
             self.stream = nil
             self.target = nil
             self.shared.withLockUnchecked { $0.latest = nil }
+            if byUser { self.onUserStopped?() }
         }
     }
 }

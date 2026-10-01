@@ -7,6 +7,22 @@ import ScreenCaptureKit
 /// applies (a shell launch inherits the terminal's). Writes `<dir>/report.txt` and PNGs of the
 /// real screen around the notch (captured with ScreenCaptureKit, DEXMA included), then quits.
 enum WarpTest {
+    /// `-captureidle <seconds>`: capture running with nothing moving, for measuring its cost
+    /// from outside (top). Then quits.
+    static func keepCapturing(controller: PanelController, seconds: Double) {
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(1))
+            let end = CACurrentMediaTime() + seconds
+            while CACurrentMediaTime() < end {
+                controller.bender?.debugKeepCapturing()
+                try? await Task.sleep(for: .milliseconds(500))
+            }
+            let stats = controller.bender?.debugCapture.statistics()
+            print("[warp] idle capture: \(stats?.frames ?? 0) frames in \(seconds) s")
+            NSApp.terminate(nil)
+        }
+    }
+
     static func run(panel: NSPanel, controller: PanelController, dir: URL) {
         let report = Report(dir: dir)
         Task { @MainActor in
