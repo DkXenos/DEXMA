@@ -60,7 +60,7 @@ struct LiquidMotionLayer: View {
         .allowsHitTesting(false)
     }
 
-    /// Compiles both shaders ahead of time (macOS 15+). `PanelController.warmUpEffects` also
+    /// Compiles both shaders ahead of time (macOS 15+). `NotchViewModel.warmUpEffects` also
     /// renders the layer once at launch, which is what warms them on macOS 14.
     static func precompile() {
         guard #available(macOS 15, *) else { return }

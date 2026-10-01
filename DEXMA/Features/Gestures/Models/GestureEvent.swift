@@ -1,5 +1,6 @@
 import CoreGraphics
 
+/// What `GestureRecognizer` made of a frame of touches.
 nonisolated enum GestureEvent: Equatable {
     case began
     /// Progress change since `began`: + is toward open (fingers moving down).

@@ -10,18 +10,6 @@ import QuartzCore
 /// Presented inside the current Core Animation transaction, so each warp frame lands on screen
 /// together with the SwiftUI silhouette it was computed for.
 final class ScreenWarpView: NSView {
-    /// Matches `WarpUniforms` in ScreenWarp.metal (64 bytes).
-    struct Uniforms {
-        var size = SIMD2<Float>()
-        var scale: Float = 2
-        var amount: Float = 0
-        var body = SIMD4<Float>()
-        var pointer = SIMD4<Float>()
-        var reach: Float = 40
-        var chroma: Float = 0
-        var debug = SIMD2<Float>()
-    }
-
     private let metalLayer = CAMetalLayer()
     private let device = MTLCreateSystemDefaultDevice()
     private let commandQueue: MTLCommandQueue?
@@ -56,7 +44,7 @@ final class ScreenWarpView: NSView {
 
     /// Draws one frame. Returns false (and draws nothing) if there's no capture frame yet.
     @discardableResult
-    func render(_ frame: (buffer: CVPixelBuffer, generation: Int), uniforms: Uniforms,
+    func render(_ frame: (buffer: CVPixelBuffer, generation: Int), uniforms: WarpUniforms,
                 colorSpace: CGColorSpace?) -> Bool {
         guard let device, let commandQueue, let pipeline, bounds.width > 0 else { return false }
         if frame.generation != textureGeneration || texture == nil {
@@ -91,7 +79,7 @@ final class ScreenWarpView: NSView {
         values.scale = Float(scale)
         encoder.setRenderPipelineState(pipeline)
         encoder.setFragmentTexture(texture, index: 0)
-        encoder.setFragmentBytes(&values, length: MemoryLayout<Uniforms>.stride, index: 0)
+        encoder.setFragmentBytes(&values, length: MemoryLayout<WarpUniforms>.stride, index: 0)
         encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
         encoder.endEncoding()
         // With presentsWithTransaction the drawable is shown in the current CA transaction:

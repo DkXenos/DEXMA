@@ -1,34 +1,24 @@
-import AppKit
 import SwiftUI
 
 struct SettingsView: View {
-    @Bindable var settings: AppSettings
-    let permission: AccessibilityPermission
-    let screenRecording: ScreenRecordingPermission
-    let preview: TouchPreview
-    let gesturesAvailable: () -> Bool
-    let hotKeyWorking: () -> Bool
-    let onRecordingChange: (Bool) -> Void
-    let showWelcome: () -> Void
-
-    @State private var launchAtLogin = LoginItem.isEnabled
+    let viewModel: SettingsViewModel
 
     var body: some View {
+        @Bindable var settings = viewModel.settings
+        let launchesAtLogin = viewModel.launchesAtLogin
+
         Form {
             Section("General") {
                 LabeledContent("Shortcut") {
-                    ShortcutRecorder(combo: $settings.hotKey, onRecordingChange: onRecordingChange)
+                    ShortcutRecorder(combo: $settings.hotKey, onRecordingChange: viewModel.setRecordingShortcut)
                 }
-                if !hotKeyWorking() {
+                if !viewModel.isHotKeyWorking {
                     Label("Another app is using this shortcut. Pick a different one.",
                           systemImage: "exclamationmark.triangle")
                         .foregroundStyle(.orange)
                 }
-                Toggle("Launch at login", isOn: $launchAtLogin)
-                    .onChange(of: launchAtLogin) { _, enabled in
-                        LoginItem.setEnabled(enabled)
-                        launchAtLogin = LoginItem.isEnabled
-                    }
+                Toggle("Launch at login", isOn: Binding(get: { launchesAtLogin },
+                                                        set: { viewModel.setLaunchesAtLogin($0) }))
                 Picker("Show on", selection: $settings.display) {
                     Text("Built-in display (notch)").tag(DisplayChoice.notched)
                     Text("Display with the pointer").tag(DisplayChoice.pointer)
@@ -76,17 +66,17 @@ struct SettingsView: View {
                 }
                 if settings.screenWarp {
                     LabeledContent {
-                        if screenRecording.isGranted {
+                        if viewModel.isScreenRecordingGranted {
                             Label("On", systemImage: "checkmark.circle.fill").foregroundStyle(.green)
                         } else {
-                            Button("Allow Screen Recording…") { screenRecording.requestAccess() }
+                            Button("Allow Screen Recording…", action: viewModel.requestScreenRecording)
                         }
                     } label: {
                         Text("Screen Recording")
                         Text("DEXMA only looks at the area around the notch, never saves it, and only while it moves or the pointer is near.")
                     }
                 }
-                if NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
+                if viewModel.reducesMotion {
                     Text("Reduce Motion is on in System Settings, so animations are short, don't bounce, and skip the lens effect.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
@@ -97,7 +87,7 @@ struct SettingsView: View {
                     Text("Swipe down from the top edge to open")
                     Text("Two fingers. Swipe up to close.")
                 }
-                if settings.gesturesEnabled, !gesturesAvailable() {
+                if settings.gesturesEnabled, !viewModel.areGesturesAvailable {
                     Label("No multitouch trackpad found. Use the shortcut instead.",
                           systemImage: "exclamationmark.triangle")
                         .foregroundStyle(.orange)
@@ -108,16 +98,16 @@ struct SettingsView: View {
                 Slider(value: $settings.triggerDistance, in: AppSettings.triggerDistanceRange) {
                     Text("Swipe distance")
                 } minimumValueLabel: { Text("Short") } maximumValueLabel: { Text("Long") }
-                TrackpadPreview(preview: preview, edgeZone: settings.edgeZone)
+                TrackpadPreview(viewModel: viewModel.trackpadPreview, edgeZone: settings.edgeZone)
                 Toggle(isOn: $settings.invertTrackpadY) {
                     Text("Flip vertical direction")
                     Text("Only if your fingers show upside down in the preview above.")
                 }
                 LabeledContent {
-                    if permission.isGranted {
+                    if viewModel.isAccessibilityGranted {
                         Label("On", systemImage: "checkmark.circle.fill").foregroundStyle(.green)
                     } else {
-                        Button("Allow in Accessibility…") { permission.requestAccess() }
+                        Button("Allow in Accessibility…", action: viewModel.requestAccessibility)
                     }
                 } label: {
                     Text("Stop pages scrolling during the swipe")
@@ -126,7 +116,7 @@ struct SettingsView: View {
             }
 
             Section {
-                Button("Show Welcome Screen…", action: showWelcome)
+                Button("Show Welcome Screen…", action: viewModel.showWelcome)
             }
         }
         .formStyle(.grouped)

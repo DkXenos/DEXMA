@@ -1,5 +1,6 @@
 import CoreGraphics
 
+/// How a swipe is recognized; set from the settings.
 nonisolated struct GestureParameters: Equatable {
     /// Fingers must land within this top fraction of the trackpad to start opening.
     var edgeZone: CGFloat = 0.12

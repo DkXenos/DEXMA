@@ -7,7 +7,7 @@ import SwiftTerm
 /// Screen Recording permission), measures frame pacing with the effect on and off, and writes
 /// posed frames as PNGs for a visual check. Prints `[effect] …` lines, then quits.
 enum EffectTest {
-    static func run(panel: NSPanel, controller: PanelController, session: ShellSession, dir: URL) {
+    static func run(panel: NSPanel, controller: NotchViewModel, session: ShellSession, dir: URL) {
         Task { @MainActor in
             // The Mac may be in use while this runs: another app taking focus must not close
             // the panel mid-test (focus handling itself is covered by -selftest).
@@ -37,7 +37,7 @@ enum EffectTest {
     // MARK: Tests
 
     /// The production snapshot, composited over black like the live view, against the window.
-    private static func snapshotFidelity(panel: NSPanel, controller: PanelController, session: ShellSession, dir: URL) {
+    private static func snapshotFidelity(panel: NSPanel, controller: NotchViewModel, session: ShellSession, dir: URL) {
         session.restartCaretBlink()  // Caret at full opacity, as snapshots draw it.
         guard let truth = windowImage(panel) else { return print("[effect] window capture failed") }
         let scale = panel.backingScaleFactor
@@ -61,7 +61,7 @@ enum EffectTest {
     }
 
     /// Live view vs motion layer with every effect at zero, at rest: must be identical.
-    private static func restSwap(_ label: String, panel: NSPanel, controller: PanelController,
+    private static func restSwap(_ label: String, panel: NSPanel, controller: NotchViewModel,
                                  session: ShellSession, dir: URL) async {
         session.restartCaretBlink()
         try? await Task.sleep(for: .milliseconds(30))
@@ -85,7 +85,7 @@ enum EffectTest {
 
     /// Frame pacing on the panel's display link through open/close cycles, plus the longest
     /// main-thread run-loop pass (which includes SwiftUI's render/commit) while animating.
-    private static func pacing(intensity: Double, controller: PanelController) async {
+    private static func pacing(intensity: Double, controller: NotchViewModel) async {
         var stamps: [CFTimeInterval] = []
         var stepTimes: [Double] = []
         var busy: [Double] = []
@@ -132,7 +132,7 @@ enum EffectTest {
 
     /// A real open: captures the window every frame from when the spring rests until a few
     /// frames after the live terminal is back, and compares each with the final frame.
-    private static func swapBack(panel: NSPanel, controller: PanelController, dir: URL) async {
+    private static func swapBack(panel: NSPanel, controller: NotchViewModel, dir: URL) async {
         controller.close()
         await waitForRest(controller)
         controller.open()
@@ -160,7 +160,7 @@ enum EffectTest {
 
     /// Finger-driven swipes and interruptions: every one must end in a consistent state, with
     /// the live terminal back (open) or hidden (closed) and the motion layer gone.
-    private static func interactions(panel: NSPanel, controller: PanelController, session: ShellSession) async {
+    private static func interactions(panel: NSPanel, controller: NotchViewModel, session: ShellSession) async {
         func report(_ label: String, expectOpen: Bool) {
             let ok = controller.state == (expectOpen ? .open : .closed)
                 && controller.progress == (expectOpen ? 1 : 0)
@@ -210,7 +210,7 @@ enum EffectTest {
     }
 
     /// Frozen frames for a visual check of each effect.
-    private static func poses(panel: NSPanel, controller: PanelController, dir: URL) async {
+    private static func poses(panel: NSPanel, controller: NotchViewModel, dir: URL) async {
         controller.effectIntensity = 1
         controller.debugBeginMotion()
         let poses: [(String, CGFloat, MotionEffects.Frame)] = [
@@ -236,7 +236,7 @@ enum EffectTest {
 
     // MARK: Helpers
 
-    private static func waitForRest(_ controller: PanelController) async {
+    private static func waitForRest(_ controller: NotchViewModel) async {
         for _ in 0..<400 {
             try? await Task.sleep(for: .milliseconds(10))
             if !controller.debugDriver.isAnimating, !controller.effects.isActive { return }

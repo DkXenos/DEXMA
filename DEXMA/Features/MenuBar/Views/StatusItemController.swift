@@ -3,10 +3,10 @@ import AppKit
 /// The menu bar item — the only visible handle on an agent app, and the way to quit it.
 final class StatusItemController: NSObject, NSMenuDelegate {
     private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
-    private unowned let app: AppDelegate
+    private let viewModel: MenuBarViewModel
 
-    init(app: AppDelegate) {
-        self.app = app
+    init(viewModel: MenuBarViewModel) {
+        self.viewModel = viewModel
         super.init()
         statusItem.button?.image = Self.makeIcon()
         statusItem.button?.setAccessibilityLabel("DEXMA")
@@ -17,32 +17,25 @@ final class StatusItemController: NSObject, NSMenuDelegate {
 
     func menuNeedsUpdate(_ menu: NSMenu) {
         menu.removeAllItems()
-        let combo = app.settings.hotKey
-        let toggle = item(app.isPanelOpen ? "Close Terminal" : "Open Terminal",
-                          #selector(togglePanel), key: combo.menuKey)
+        let combo = viewModel.shortcut
+        let toggle = item(viewModel.toggleTitle, #selector(MenuBarViewModel.togglePanel), key: combo.menuKey)
         toggle.keyEquivalentModifierMask = combo.menuModifiers
         menu.addItem(toggle)
         menu.addItem(.separator())
-        menu.addItem(item("Settings…", #selector(openSettings), key: ","))
-        menu.addItem(item("Welcome & Permissions…", #selector(openWelcome)))
-        let login = item("Launch at Login", #selector(toggleLoginItem))
-        login.state = LoginItem.isEnabled ? .on : .off
+        menu.addItem(item("Settings…", #selector(MenuBarViewModel.openSettings), key: ","))
+        menu.addItem(item("Welcome & Permissions…", #selector(MenuBarViewModel.openWelcome)))
+        let login = item("Launch at Login", #selector(MenuBarViewModel.toggleLaunchAtLogin))
+        login.state = viewModel.launchesAtLogin ? .on : .off
         menu.addItem(login)
         menu.addItem(.separator())
-        menu.addItem(item("Quit DEXMA", #selector(quit), key: "q"))
+        menu.addItem(item("Quit DEXMA", #selector(MenuBarViewModel.quit), key: "q"))
     }
 
     private func item(_ title: String, _ action: Selector, key: String = "") -> NSMenuItem {
         let item = NSMenuItem(title: title, action: action, keyEquivalent: key)
-        item.target = self
+        item.target = viewModel
         return item
     }
-
-    @objc private func togglePanel() { app.togglePanel() }
-    @objc private func openSettings() { app.showSettings(nil) }
-    @objc private func openWelcome() { app.showOnboarding() }
-    @objc private func toggleLoginItem() { LoginItem.setEnabled(!LoginItem.isEnabled) }
-    @objc private func quit() { NSApp.terminate(nil) }
 
     /// A screen outline with the notch at the top, as a template so it follows the menu bar.
     private static func makeIcon() -> NSImage {

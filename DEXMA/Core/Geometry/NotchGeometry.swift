@@ -105,9 +105,12 @@ struct NotchGeometry: Equatable {
                       height: expandedSize.height - top - inset + 2)
     }
 
-    /// The screen with a notch (the built-in display, often not the primary screen),
-    /// else the primary screen.
-    static func notchedScreen() -> NSScreen? {
-        NSScreen.screens.first { $0.safeAreaInsets.top > 0 } ?? NSScreen.screens.first
+    /// Where the pointer counts as over the notch (global coordinates): the notch plus a
+    /// little slack; while peeking, the swollen shape too, so the pointer doesn't flicker in
+    /// and out at its edge.
+    func hoverZone(peeking: Bool) -> CGRect {
+        let grow: CGFloat = peeking ? 24 : 6
+        return CGRect(x: notchRect.minX - grow, y: notchRect.minY - grow,
+                      width: notchRect.width + 2 * grow, height: notchRect.height + grow + 1)
     }
 }

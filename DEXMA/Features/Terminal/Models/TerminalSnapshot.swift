@@ -8,7 +8,7 @@ import SwiftTerm
 /// their own layers, so those are added by hand: the caret, drawn by its layer delegate, and
 /// the overlay scroller's knob, a rounded layer with a background colour. The background is
 /// left transparent: the live terminal is transparent too and shows the black shape through.
-/// Checked against the window server's own composite with `-capturetest` (Debug).
+/// Checked against the window server's own composite with `-effecttest` (Debug).
 struct TerminalSnapshot: Equatable {
     let image: CGImage
     let scale: CGFloat

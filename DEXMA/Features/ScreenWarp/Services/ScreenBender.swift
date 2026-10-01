@@ -6,20 +6,10 @@ import AppKit
 ///
 /// With Screen Recording allowed, ScreenCaptureKit streams the screen under the panel and
 /// `ScreenWarpView` redraws it bent and colour-split. The stream runs only around intent
-/// (pointer nearby, fingers on the trackpad's top edge, an open or close) and stops a few
-/// seconds after things go quiet. Without the permission, the Liquid Glass ring
-/// (`BackdropLens`, macOS 26) bends the edge during motion instead.
+/// (pointer nearby, fingers on the trackpad's top edge, an open or close) and stops 1.5 s
+/// after things go quiet. Without the permission, the Liquid Glass ring (`BackdropLens`,
+/// macOS 26) bends the edge during motion instead.
 final class ScreenBender {
-    /// The silhouette this frame and how hard it's moving.
-    struct Motion {
-        var silhouette: CGRect  // Panel coordinates, top-left origin.
-        var radius: CGFloat
-        /// 0…1.
-        var strength: CGFloat
-        /// +1 growing (pushes the screen out), −1 shrinking (pulls it in).
-        var direction: CGFloat
-    }
-
     /// The Settings switch; the warp also needs the permission.
     var isWarpEnabled = true {
         didSet {
@@ -120,7 +110,7 @@ final class ScreenBender {
 
     /// Once per display frame (and with `motion == nil` once motion ends). Returns true while
     /// the pointer lens still needs frames.
-    func step(dt: CFTimeInterval, motion: Motion?) -> Bool {
+    func step(dt: CFTimeInterval, motion: SilhouetteMotion?) -> Bool {
         let pointerBusy = stepPointer(dt)
         let pushing = (motion?.strength ?? 0) * (motion?.direction ?? 0) * tuning.screenWarp
             + tuning.hoverPush * pointerStrength
@@ -140,7 +130,7 @@ final class ScreenBender {
             let reach = tuning.screenWarpReach
             let silhouette = motion?.silhouette ?? restingSilhouette()
             let radius = motion?.radius ?? geometry().shape(at: 0).drawnBottomRadius
-            var uniforms = ScreenWarpView.Uniforms()
+            var uniforms = WarpUniforms()
             let size = panel.frame.size
             uniforms.size = SIMD2(Float(size.width), Float(size.height))
             // Pulling in more than half the reach would fold the image over itself.
@@ -177,7 +167,7 @@ final class ScreenBender {
     // MARK: Private
 
     /// Without the warp (no permission, or the switch off): the glass ring during motion.
-    private func updateGlass(_ motion: Motion?) {
+    private func updateGlass(_ motion: SilhouetteMotion?) {
         guard let motion, !canWarp else {
             glass.update(silhouette: .zero, radius: 0, ring: 0)
             return
@@ -232,11 +222,6 @@ final class ScreenBender {
         capture.stop()
         warpView.hide()
         warpBlend = 0
-    }
-
-    private func smoothstep(_ x: CGFloat) -> CGFloat {
-        let t = min(max(x, 0), 1)
-        return t * t * (3 - 2 * t)
     }
 
     #if DEBUG

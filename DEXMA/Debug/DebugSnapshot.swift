@@ -6,11 +6,11 @@ import SwiftTerm
 /// values into PNGs, then quits. An app may render its own windows without Screen Recording
 /// permission, so this works from the command line.
 enum DebugSnapshot {
-    static func runIfRequested(panel: NSPanel, controller: PanelController, session: ShellSession) {
+    static func runIfRequested(coordinator: AppCoordinator, panel: NSPanel, controller: NotchViewModel, session: ShellSession) {
         let arguments = ProcessInfo.processInfo.arguments
         setvbuf(stdout, nil, _IOLBF, 0)  // Line-buffered, so a killed test run keeps its output.
         if arguments.contains("-selftest") {
-            selfTest(panel: panel, controller: controller, session: session)
+            selfTest(coordinator: coordinator, panel: panel, controller: controller, session: session)
             return
         }
         if let index = arguments.firstIndex(of: "-captureidle"), index + 1 < arguments.count {
@@ -41,7 +41,7 @@ enum DebugSnapshot {
     }
 
     /// `DEXMA -selftest`: opens and closes via the controller and prints focus state.
-    private static func selfTest(panel: NSPanel, controller: PanelController, session: ShellSession) {
+    private static func selfTest(coordinator: AppCoordinator, panel: NSPanel, controller: NotchViewModel, session: ShellSession) {
         func report(_ label: String) {
             let responder = panel.firstResponder === session.terminalView ? "terminal" : "\(panel.firstResponder.map { type(of: $0) } as Any)"
             print("[selftest] \(label): state=\(controller.state) progress=\(String(format: "%.3f", controller.progress)) key=\(panel.isKeyWindow) firstResponder=\(responder) appActive=\(NSApp.isActive) frontmost=\(NSWorkspace.shared.frontmostApplication?.localizedName ?? "-") mouseThrough=\(panel.ignoresMouseEvents) terminalHidden=\(session.container.isHidden)")
@@ -65,21 +65,21 @@ enum DebugSnapshot {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { report("close +150ms") }
                 DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
                     report("close settled")
-                    settingsChecks(panel: panel)
+                    settingsChecks(coordinator: coordinator, panel: panel)
                 }
             }
         }
     }
 
-    private static func settingsChecks(panel: NSPanel) {
-        guard let app = NSApp.delegate as? AppDelegate else { return }
+    private static func settingsChecks(coordinator: AppCoordinator, panel: NSPanel) {
+        let settings = coordinator.settings
         let widthBefore = panel.frame.width
-        app.settings.panelWidth = 800
+        settings.panelWidth = 800
         print("[selftest] panel width \(widthBefore) → \(panel.frame.width) after settings.panelWidth = 800")
-        app.settings.hotKey = KeyCombo(keyCode: 0x31, carbonModifiers: 0x0800, display: "⌥Space", menuKey: " ")
-        app.settings.hotKey = .defaultCombo
+        settings.hotKey = KeyCombo(keyCode: 0x31, carbonModifiers: 0x0800, display: "⌥Space", menuKey: " ")
+        settings.hotKey = .defaultCombo
         print("[selftest] hotkey re-registered twice without trouble")
-        app.showSettings(nil)
+        coordinator.showSettings()
         DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
             let windows = NSApp.windows.filter(\.isVisible).map { "\($0.title.isEmpty ? String(describing: type(of: $0)) : $0.title) \(Int($0.frame.width))x\(Int($0.frame.height))" }
             print("[selftest] visible windows: \(windows)")

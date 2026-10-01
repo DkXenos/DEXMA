@@ -1,3 +1,4 @@
+/// Which screen the panel opens on.
 enum DisplayChoice: String, CaseIterable {
     /// The built-in display's notch (or the primary screen when the lid is closed).
     case notched

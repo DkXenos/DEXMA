@@ -2,11 +2,11 @@ import Foundation
 import OpenMultitouchSupport
 import OpenMultitouchSupportXCF
 
-/// Raw trackpad touches (OpenMultitouchSupport) → `GestureRecognizer` → `PanelController`.
-/// If multitouch isn't available the engine simply stays off; the hotkey still works.
+/// Raw trackpad touches (OpenMultitouchSupport) → `GestureRecognizer` → the `SwipeTarget`
+/// (the notch panel). If multitouch isn't available the engine simply stays off; the hotkey
+/// still works.
 final class GestureEngine {
-    private let controller: PanelController
-    private let session: ShellSession
+    private let target: any SwipeTarget
     private var recognizer = GestureRecognizer()
     private var task: Task<Void, Never>?
 
@@ -21,9 +21,8 @@ final class GestureEngine {
     private(set) var isRunning = false
     private var wasCapturing = false
 
-    init(controller: PanelController, session: ShellSession) {
-        self.controller = controller
-        self.session = session
+    init(target: any SwipeTarget) {
+        self.target = target
     }
 
     /// Returns false (and stays off) when there is no multitouch device or it can't start.
@@ -64,14 +63,12 @@ final class GestureEngine {
 
         let event = recognizer.update(
             touches: touches, time: ProcessInfo.processInfo.systemUptime,
-            panelOpen: controller.state == .open,
-            canClose: session.isScrolledToBottom && !session.isRunningFullScreenProgram,
-            parameters: parameters)
+            panelOpen: target.isOpen, canClose: target.canCloseBySwipe, parameters: parameters)
         switch event {
-        case .began: controller.beginInteraction()
-        case .changed(let delta): controller.updateInteraction(delta: delta)
-        case .ended(_, let velocity): controller.endInteraction(velocity: velocity)
-        case .cancelled: controller.endInteraction(velocity: 0)
+        case .began: target.beginInteraction()
+        case .changed(let delta): target.updateInteraction(delta: delta)
+        case .ended(_, let velocity): target.endInteraction(velocity: velocity)
+        case .cancelled: target.endInteraction(velocity: 0)
         case nil: break
         }
         var swipeCompleted = false
@@ -83,7 +80,7 @@ final class GestureEngine {
         guard capturing != wasCapturing else { return }
         wasCapturing = capturing
         // Fingers just landed on the top edge: a swipe may follow, get the screen warp ready.
-        if capturing { controller.prepareForMotion() }
+        if capturing { target.prepareForMotion() }
         scrollGate?.setCapturing(capturing, swipeCompleted: swipeCompleted)
     }
 }

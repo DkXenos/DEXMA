@@ -9,7 +9,7 @@ import ScreenCaptureKit
 enum WarpTest {
     /// `-captureidle <seconds>`: capture running with nothing moving, for measuring its cost
     /// from outside (top). Then quits.
-    static func keepCapturing(controller: PanelController, seconds: Double) {
+    static func keepCapturing(controller: NotchViewModel, seconds: Double) {
         Task { @MainActor in
             try? await Task.sleep(for: .seconds(1))
             let end = CACurrentMediaTime() + seconds
@@ -23,7 +23,7 @@ enum WarpTest {
         }
     }
 
-    static func run(panel: NSPanel, controller: PanelController, dir: URL) {
+    static func run(panel: NSPanel, controller: NotchViewModel, dir: URL) {
         let report = Report(dir: dir)
         Task { @MainActor in
             controller.closesOnFocusLoss = false  // The Mac may be in use while this runs.
@@ -106,7 +106,7 @@ enum WarpTest {
         return nil
     }
 
-    private static func pacing(controller: PanelController, capture: ScreenCapture, report: Report) async {
+    private static func pacing(controller: NotchViewModel, capture: ScreenCapture, report: Report) async {
         var stamps: [CFTimeInterval] = []
         var busy: [Double] = []
         var passStart: CFTimeInterval = 0
@@ -139,7 +139,7 @@ enum WarpTest {
                            after.frames - before.frames, after.longestGap * 1000))
     }
 
-    private static func waitForRest(_ controller: PanelController) async {
+    private static func waitForRest(_ controller: NotchViewModel) async {
         for _ in 0..<400 {
             try? await Task.sleep(for: .milliseconds(10))
             if !controller.debugDriver.isAnimating, !controller.effects.isActive { return }

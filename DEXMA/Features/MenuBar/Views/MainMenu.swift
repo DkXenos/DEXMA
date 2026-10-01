@@ -3,16 +3,16 @@ import AppKit
 /// A small main menu: it's only reachable while one of DEXMA's windows (Settings,
 /// Welcome) is active, and gives those windows the standard editing shortcuts.
 enum MainMenu {
-    static func make(target: AppDelegate) -> NSMenu {
+    static func make(viewModel: MenuBarViewModel) -> NSMenu {
         let main = NSMenu()
 
         let appMenu = NSMenu()
         appMenu.addItem(withTitle: "About DEXMA",
                         action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)), keyEquivalent: "")
         appMenu.addItem(.separator())
-        let settings = appMenu.addItem(withTitle: "Settings…", action: #selector(AppDelegate.showSettings(_:)),
+        let settings = appMenu.addItem(withTitle: "Settings…", action: #selector(MenuBarViewModel.openSettings),
                                        keyEquivalent: ",")
-        settings.target = target
+        settings.target = viewModel
         appMenu.addItem(.separator())
         appMenu.addItem(withTitle: "Quit DEXMA", action: #selector(NSApplication.terminate(_:)),
                         keyEquivalent: "q")

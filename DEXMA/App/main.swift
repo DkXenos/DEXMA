@@ -4,7 +4,7 @@ import AppKit
 // and a default main menu (⌘Q, ⌘W, ⌘,) — none of which a notch utility wants.
 // Top-level code is nonisolated but always runs on the main thread.
 MainActor.assumeIsolated {
-    // Before AppDelegate: its AppSettings reads UserDefaults on init.
+    // Before AppDelegate: its coordinator's AppSettings reads UserDefaults on init.
     DefaultsMigration.run()
     let delegate = AppDelegate()
     NSApplication.shared.delegate = delegate

@@ -1,28 +1,20 @@
 import AppKit
 import SwiftUI
 
+/// The welcome window. Tells its view model when it opens and closes.
 final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
-    private let permission: AccessibilityPermission
-    private let screenRecording: ScreenRecordingPermission
-    private let onFinish: () -> Void
+    private let viewModel: OnboardingViewModel
 
-    init(permission: AccessibilityPermission, screenRecording: ScreenRecordingPermission,
-         shortcut: String, onFinish: @escaping () -> Void) {
-        self.permission = permission
-        self.screenRecording = screenRecording
-        self.onFinish = onFinish
+    init(viewModel: OnboardingViewModel) {
+        self.viewModel = viewModel
         let window = NSWindow(contentRect: .zero, styleMask: [.titled, .closable],
                               backing: .buffered, defer: false)
         window.title = "Welcome to DEXMA"
         window.isReleasedWhenClosed = false
         super.init(window: window)
-        window.contentViewController = NSHostingController(rootView: OnboardingView(
-            permission: permission, screenRecording: screenRecording, shortcut: shortcut,
-            onDone: { [weak self] in
-                self?.onFinish()
-                self?.window?.close()
-            }))
+        window.contentViewController = NSHostingController(rootView: OnboardingView(viewModel: viewModel))
         window.delegate = self
+        viewModel.dismiss = { [weak self] in self?.window?.close() }
     }
 
     @available(*, unavailable)
@@ -31,22 +23,20 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
     }
 
     func show() {
-        permission.startMonitoring()
-        screenRecording.startMonitoring()
+        viewModel.windowDidOpen()
         NSApp.activate()  // An agent app must activate for its window to come to the front.
         window?.center()
         showWindow(nil)
         window?.makeKeyAndOrderFront(nil)
     }
 
-    // Only the user dismissing it counts as "seen" — not the app quitting with it open.
+    // The close button counts as seen too (Done closes the window directly, without this).
     func windowShouldClose(_ sender: NSWindow) -> Bool {
-        onFinish()
+        viewModel.markSeen()
         return true
     }
 
     func windowWillClose(_ notification: Notification) {
-        permission.stopMonitoring()
-        screenRecording.stopMonitoring()
+        viewModel.windowWillClose()
     }
 }

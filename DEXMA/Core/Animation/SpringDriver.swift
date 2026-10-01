@@ -4,7 +4,7 @@ import SwiftUI
 
 /// Steps a value toward a target with a SwiftUI `Spring`, once per display frame.
 ///
-/// `value` is always what's on screen, so a new target (or, later, a gesture) can take
+/// `value` is always what's on screen, so a new target (or a finger, through `set`) can take
 /// over mid-flight and the spring carries on with its current velocity.
 final class SpringDriver: NSObject {
     private(set) var value: CGFloat = 0

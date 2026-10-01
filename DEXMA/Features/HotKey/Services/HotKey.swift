@@ -4,10 +4,9 @@ import os
 /// A system-wide keyboard shortcut via Carbon's `RegisterEventHotKey`, still the only
 /// public global-hotkey API that needs no Accessibility or Input Monitoring permission.
 final class HotKey {
-    private static let signature: OSType = 0x4E54_524D  // 'NTRM'
+    private static let signature: OSType = 0x4458_4D41  // 'DXMA'
     private static var nextID: UInt32 = 1
-    private static let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "DEXMA",
-                                       category: "HotKey")
+    private static let logger = Logger(category: "HotKey")
 
     private let id: UInt32
     private let action: () -> Void

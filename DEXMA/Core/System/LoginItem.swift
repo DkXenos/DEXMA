@@ -3,8 +3,7 @@ import ServiceManagement
 
 /// Launch at login via `SMAppService.mainApp` (macOS 13+; no helper app needed).
 enum LoginItem {
-    private static let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "DEXMA",
-                                       category: "LoginItem")
+    private static let logger = Logger(category: "LoginItem")
 
     static var isEnabled: Bool {
         SMAppService.mainApp.status == .enabled

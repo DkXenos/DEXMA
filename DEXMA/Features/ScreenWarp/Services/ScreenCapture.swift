@@ -11,8 +11,7 @@ import ScreenCaptureKit
 /// Frames arrive on a private queue; the newest one is kept (retaining its pixel buffer, so
 /// ScreenCaptureKit doesn't reuse it while it's drawn) behind a lock.
 final class ScreenCapture: NSObject, SCStreamOutput, SCStreamDelegate {
-    nonisolated private static let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "DEXMA",
-                                       category: "ScreenCapture")
+    nonisolated private static let logger = Logger(category: "ScreenCapture")
 
     nonisolated private struct Shared {
         var latest: CVPixelBuffer?

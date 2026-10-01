@@ -2,10 +2,7 @@ import AppKit
 import SwiftUI
 
 struct OnboardingView: View {
-    let permission: AccessibilityPermission
-    let screenRecording: ScreenRecordingPermission
-    let shortcut: String
-    let onDone: () -> Void
+    let viewModel: OnboardingViewModel
 
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
@@ -22,8 +19,8 @@ struct OnboardingView: View {
             VStack(alignment: .leading, spacing: 10) {
                 Label("Swipe down with two fingers from the very top edge of the trackpad",
                       systemImage: "hand.point.up.left")
-                Label("…or press \(shortcut) from anywhere", systemImage: "keyboard")
-                Label("Swipe up, press Esc, or press \(shortcut) again to close",
+                Label("…or press \(viewModel.shortcut) from anywhere", systemImage: "keyboard")
+                Label("Swipe up, press Esc, or press \(viewModel.shortcut) again to close",
                       systemImage: "arrow.up.to.line")
                 Label("DEXMA lives in the menu bar — quit and settings are there",
                       systemImage: "menubar.rectangle")
@@ -34,7 +31,7 @@ struct OnboardingView: View {
                     HStack {
                         Text("Accessibility").font(.headline)
                         Spacer()
-                        if permission.isGranted {
+                        if viewModel.isAccessibilityGranted {
                             Label("Granted", systemImage: "checkmark.circle.fill")
                                 .foregroundStyle(.green)
                         } else {
@@ -50,8 +47,8 @@ struct OnboardingView: View {
                         .font(.callout)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
-                    if !permission.isGranted {
-                        Button("Open Accessibility Settings…") { permission.requestAccess() }
+                    if !viewModel.isAccessibilityGranted {
+                        Button("Open Accessibility Settings…", action: viewModel.requestAccessibility)
                         Text("Turn on DEXMA in the list. This updates as soon as you do — no restart needed.")
                             .font(.caption)
                             .foregroundStyle(.secondary)
@@ -65,7 +62,7 @@ struct OnboardingView: View {
                     HStack {
                         Text("Screen Recording (optional)").font(.headline)
                         Spacer()
-                        if screenRecording.isGranted {
+                        if viewModel.isScreenRecordingGranted {
                             Label("Granted", systemImage: "checkmark.circle.fill")
                                 .foregroundStyle(.green)
                         }
@@ -79,8 +76,8 @@ struct OnboardingView: View {
                         .font(.callout)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
-                    if !screenRecording.isGranted {
-                        Button("Allow Screen Recording…") { screenRecording.requestAccess() }
+                    if !viewModel.isScreenRecordingGranted {
+                        Button("Allow Screen Recording…", action: viewModel.requestScreenRecording)
                     }
                 }
                 .padding(6)
@@ -92,7 +89,7 @@ struct OnboardingView: View {
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
                 Spacer()
-                Button("Done", action: onDone)
+                Button("Done", action: viewModel.done)
                     .keyboardShortcut(.defaultAction)
             }
         }

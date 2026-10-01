@@ -3,7 +3,7 @@ import Observation
 
 /// State of the liquid effect while the panel moves, stepped once per display frame by the
 /// panel's `SpringDriver`. Every value is exactly zero once the motion has settled; only
-/// then does the live terminal come back (see `PanelController`).
+/// then does the live terminal come back (see `LiquidMotionEngine`).
 @Observable
 final class MotionEffects {
     struct Frame: Equatable {

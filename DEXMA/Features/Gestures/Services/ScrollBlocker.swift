@@ -10,8 +10,7 @@ final class ScrollBlocker {
     private(set) var isActive = false
     var onActiveChange: ((Bool) -> Void)?
     private var pollTimer: Timer?
-    private static let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "DEXMA",
-                                       category: "ScrollBlocker")
+    private static let logger = Logger(category: "ScrollBlocker")
 
     func startWhenPermitted() {
         guard !isActive, pollTimer == nil else { return }
