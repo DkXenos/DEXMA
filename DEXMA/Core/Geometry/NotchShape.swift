@@ -33,6 +33,14 @@ struct NotchShape: Shape {
                           bottomRadius: bottomRadius, earRadius: earRadius, centerX: centerX)
     }
 
+    /// The shape as a layer mask for an unflipped (y-up) view of `viewHeight` whose top-left
+    /// corner sits at `origin` in the panel's coordinates (top-left origin, y down).
+    func maskPath(panelSize: CGSize, origin: CGPoint, viewHeight: CGFloat) -> CGPath? {
+        var transform = CGAffineTransform(a: 1, b: 0, c: 0, d: -1,
+                                          tx: -origin.x, ty: viewHeight + origin.y)
+        return path(in: CGRect(origin: .zero, size: panelSize)).cgPath.copy(using: &transform)
+    }
+
     func path(in rect: CGRect) -> Path {
         let w = max(0, width)
         let h = max(0, height)

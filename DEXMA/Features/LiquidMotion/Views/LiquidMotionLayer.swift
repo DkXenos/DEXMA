@@ -1,12 +1,12 @@
 import SwiftUI
 
-/// The terminal while the panel moves: a snapshot of it, stretched with the silhouette and
-/// bent by the lens shader (LiquidEffects.metal), plus the light on the rim. It sits over the
-/// black silhouette, which stays an ordinary vector shape throughout (squashed and stretched
-/// through its own size), so nothing but the text is ever swapped.
+/// The content (terminal or Search card) while the panel moves: a snapshot of it, stretched
+/// with the silhouette and bent by the lens shader (LiquidEffects.metal), plus the light on
+/// the rim. It sits over the black silhouette, which stays an ordinary vector shape throughout
+/// (squashed and stretched through its own size), so nothing but the content is ever swapped.
 ///
 /// Only on screen while `effects.isActive`; at rest it's transparent with both shaders
-/// disabled, and the live terminal shows instead.
+/// disabled, and the live content shows instead.
 struct LiquidMotionLayer: View {
     let effects: MotionEffects
     /// The silhouette as drawn this frame, already scaled by `scale`.
@@ -15,7 +15,7 @@ struct LiquidMotionLayer: View {
     let scale: CGSize
     let progress: CGFloat
     let panelSize: CGSize
-    let terminalFrame: CGRect
+    let contentFrame: CGRect
     let contentOpacity: CGFloat
 
     var body: some View {
@@ -34,8 +34,8 @@ struct LiquidMotionLayer: View {
             Color.black.opacity(0.004)
             if let snapshot = effects.snapshot {
                 Image(decorative: snapshot.image, scale: snapshot.scale)
-                    .frame(width: terminalFrame.width, height: terminalFrame.height)
-                    .offset(x: terminalFrame.minX, y: terminalFrame.minY)
+                    .frame(width: contentFrame.width, height: contentFrame.height)
+                    .offset(x: contentFrame.minX, y: contentFrame.minY)
                     .opacity(contentOpacity)
             }
         }
@@ -54,7 +54,7 @@ struct LiquidMotionLayer: View {
                 .float4(p, tuning.highlightWidth, tuning.rimWidth, 0)),
             maxSampleOffset: Self.lensReach(tuning),
             isEnabled: active)
-        // Like the live terminal's mask: nothing shows outside the silhouette.
+        // Like the live content's mask: nothing shows outside the silhouette.
         .clipShape(shape)
         .opacity(active ? 1 : 0)
         .allowsHitTesting(false)

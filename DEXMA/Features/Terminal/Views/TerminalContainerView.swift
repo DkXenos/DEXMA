@@ -30,11 +30,7 @@ final class TerminalContainerView: NSView {
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         maskLayer.frame = bounds
-        // Panel coordinates are y-down; this (unflipped) view's layer is y-up.
-        var transform = CGAffineTransform(a: 1, b: 0, c: 0, d: -1,
-                                          tx: -origin.x, ty: bounds.height + origin.y)
-        let path = shape.path(in: CGRect(origin: .zero, size: panelSize)).cgPath
-        maskLayer.path = path.copy(using: &transform)
+        maskLayer.path = shape.maskPath(panelSize: panelSize, origin: origin, viewHeight: bounds.height)
         // The mask's opacity scales the content's alpha: that's the fade.
         maskLayer.opacity = Float(opacity)
         CATransaction.commit()

@@ -44,4 +44,29 @@ struct NotchGeometryTests {
         let beside = CGPoint(x: notch.minX - 10, y: notch.midY)
         #expect(!resting.contains(beside) && peeking.contains(beside))
     }
+
+    @Test func bandSitsBesideTheNotchAndContentBelowIt() {
+        let notch = CGRect(x: 1000, y: 950, width: 185, height: 32)
+        let geometry = NotchGeometry(screenFrame: CGRect(x: 0, y: 0, width: 2000, height: 982),
+                                     notchRect: notch, hasNotch: true,
+                                     expandedSize: CGSize(width: 680, height: 400))
+        let notchInPanel = notch.offsetBy(dx: -geometry.panelFrame.minX, dy: 0)
+        let tabs = geometry.tabBandFrame
+        let actions = geometry.actionBandFrame
+        let content = geometry.contentFrame
+        #expect(geometry.bandHeight == 32)
+        // Never under the notch, and inside the body like the content card.
+        #expect(tabs.maxX <= notchInPanel.minX - NotchGeometry.notchGap + 0.01)
+        #expect(actions.minX >= notchInPanel.maxX + NotchGeometry.notchGap - 0.01)
+        #expect(abs(tabs.minX - content.minX) < 0.01 && abs(actions.maxX - content.maxX) < 0.01)
+        #expect(tabs.width > 200 && actions.width > 200)
+        // The content card starts below the band, where the terminal always was.
+        #expect(content.minY == 38)
+
+        // A short pill still gets a band tall enough for the controls.
+        let pill = NotchGeometry(screenFrame: CGRect(x: 0, y: 0, width: 2560, height: 1440),
+                                 notchRect: CGRect(x: 1205, y: 1420, width: 150, height: 20),
+                                 hasNotch: false, expandedSize: CGSize(width: 680, height: 400))
+        #expect(pill.bandHeight == 28 && pill.contentFrame.minY == 34)
+    }
 }

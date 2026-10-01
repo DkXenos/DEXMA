@@ -9,6 +9,12 @@ app you were using. When closed, DEXMA is invisible.
 
 - **Always ready:** one zsh starts when DEXMA launches and keeps running while the panel
   is closed. Your history, working directory and running jobs are still there next time.
+- **Tabs:** *Terminal* and *Search* sit in the strip left of the notch (<kbd>⌘</kbd><kbd>1</kbd>,
+  <kbd>⌘</kbd><kbd>2</kbd>). Search has a field at the top of the panel: type words to search
+  Google, or an address to open it, and press Return. <kbd>⌘</kbd><kbd>L</kbd> jumps to the
+  field from anywhere in the panel. Right of the notch are back, forward, reload and open in
+  your browser (<kbd>⌘</kbd><kbd>[</kbd>, <kbd>⌘</kbd><kbd>]</kbd>, <kbd>⌘</kbd><kbd>R</kbd>).
+  The page stays loaded while the panel is closed. Nothing is loaded until your first search.
 - **Gesture or shortcut:** a two-finger swipe from the top edge of the trackpad, or
   <kbd>⌥</kbd><kbd>`</kbd> from anywhere (you can change the shortcut). Hovering over the
   notch makes it swell slightly; click to open.
@@ -17,8 +23,8 @@ app you were using. When closed, DEXMA is invisible.
 - **Screens without a notch** (external displays, or older Macs) show a small pill at the top
   of the screen instead.
 - **Liquid motion:** while opening and closing, the notch moves like a liquid lens. It
-  stretches with the motion and wobbles slightly when it lands. Its rim bends the text beneath
-  it, and a soft highlight sweeps along it. If you allow Screen Recording, the real screen
+  stretches with the motion and wobbles slightly when it lands. Its rim bends the content
+  beneath it (the terminal or the Search page), and a soft highlight sweeps along it. If you allow Screen Recording, the real screen
   around the notch warps too, like the screen around the iPhone's Camera Control. Whatever
   is behind it gets pushed out as the notch grows and pulled in as it shrinks, with a colour
   split, and a small lens follows the pointer near the notch. Without the permission (on
@@ -97,14 +103,15 @@ The app uses a feature-based MVVM layout (AppKit + SwiftUI), with one type per f
   connects everything at launch.
 - `DEXMA/Core/`: shared building blocks with no UI: spring animation, notch geometry, the
   settings store, permissions, launch at login.
-- `DEXMA/Features/`: one folder per feature: `Notch`, `Terminal`, `Gestures`,
+- `DEXMA/Features/`: one folder per feature: `Notch`, `Terminal`, `Search`, `Gestures`,
   `LiquidMotion`, `ScreenWarp`, `HotKey`, `MenuBar`, `Settings` and `Onboarding`. Each is
   split into `Models/`, `ViewModels/`, `Views/` and `Services/` (and `Shaders/` for Metal),
   as far as it needs them.
 - `DEXMA/Resources/`: the asset catalog with the app icon.
 - `DEXMA/Debug/`: self-checks that only exist in Debug builds (`-selftest`, `-snapshot`,
-  `-effecttest`, `-warptest`).
+  `-effecttest`, `-tabtest`, `-warptest`).
 - `DEXMATests/`: unit tests (Swift Testing), in the same `Core/` and `Features/` folders:
-  gesture recognition, geometry, the liquid effect, shortcut recording, settings migration.
+  gesture recognition, geometry, the liquid effect, search addresses, shortcut recording,
+  settings migration.
 - `DEXMAUITests/`: Xcode's UI test template.
 - `CLAUDE.md`: architecture notes, rules and a development log.

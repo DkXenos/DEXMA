@@ -3,7 +3,7 @@ import Observation
 
 /// State of the liquid effect while the panel moves, stepped once per display frame by the
 /// panel's `SpringDriver`. Every value is exactly zero once the motion has settled; only
-/// then does the live terminal come back (see `LiquidMotionEngine`).
+/// then does the live content come back (see `LiquidMotionEngine`).
 @Observable
 final class MotionEffects {
     struct Frame: Equatable {
@@ -30,20 +30,25 @@ final class MotionEffects {
     }
 
     private(set) var frame = Frame()
-    /// The motion layer (snapshot + shaders) is on screen instead of the live terminal.
+    /// The motion layer (snapshot + shaders) is on screen instead of the live content.
     private(set) var isActive = false
-    private(set) var snapshot: TerminalSnapshot?
+    private(set) var snapshot: ContentSnapshot?
 
     @ObservationIgnored var tuning = EffectTuning.full
     @ObservationIgnored private var jellyVelocity: CGFloat = 0
     @ObservationIgnored private var anticipationTime: Double?
 
-    func begin(with snapshot: TerminalSnapshot?) {
+    func begin(with snapshot: ContentSnapshot?) {
         if let snapshot, snapshot != self.snapshot { self.snapshot = snapshot }
         isActive = true
     }
 
-    /// Back to the live terminal. Only called once everything is at rest.
+    /// Another tab's content took over mid-motion: show its picture instead (even none).
+    func show(_ snapshot: ContentSnapshot?) {
+        if snapshot != self.snapshot { self.snapshot = snapshot }
+    }
+
+    /// Back to the live content. Only called once everything is at rest.
     func end() {
         frame = Frame()
         jellyVelocity = 0

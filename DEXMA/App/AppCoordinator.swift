@@ -24,9 +24,11 @@ final class AppCoordinator: WindowRouter {
     func start() {
         guard let geometry = geometryProvider.makeGeometry() else { return }
         // Pre-warm: zsh starts now and outlives every open/close.
-        let session = ShellSession(size: geometry.terminalFrame.size)
+        let session = ShellSession(size: geometry.contentFrame.size)
+        // Pre-warm: the Search card and its web view exist from launch (nothing loads yet).
+        let search = SearchViewModel(session: SearchSession(size: geometry.contentFrame.size))
         let panel = NotchPanel(frame: geometry.panelFrame)
-        let notch = NotchViewModel(panel: panel, session: session, geometry: geometry)
+        let notch = NotchViewModel(panel: panel, session: session, search: search, geometry: geometry)
         notch.geometryForOpening = { [weak self] in self?.geometryProvider.makeGeometry() }
 
         let hostingView = NSHostingView(rootView: NotchContentView(viewModel: notch))

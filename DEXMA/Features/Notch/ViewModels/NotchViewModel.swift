@@ -11,6 +11,8 @@ final class NotchViewModel: SwipeTarget {
     private(set) var progress: CGFloat = 0
     private(set) var state: PanelState = .closed
     private(set) var geometry: NotchGeometry
+    /// The tab on show (terminal or Search); the other one's view is hidden.
+    private(set) var tab: PanelTab = .terminal
 
     @ObservationIgnored var escClosesPanel = true
     @ObservationIgnored var closesOnFocusLoss = true
@@ -23,6 +25,8 @@ final class NotchViewModel: SwipeTarget {
 
     /// The one terminal, shown in the panel.
     let session: ShellSession
+    /// The Search tab: its card and the band's buttons.
+    let search: SearchViewModel
     private let panel: NotchPanel
     private let driver: SpringDriver
     private let motion: LiquidMotionEngine
@@ -33,28 +37,37 @@ final class NotchViewModel: SwipeTarget {
     /// The current open/close came from a swipe: tick when it lands.
     @ObservationIgnored private var ticksOnLanding = false
 
-    init(panel: NotchPanel, session: ShellSession, geometry: NotchGeometry) {
+    init(panel: NotchPanel, session: ShellSession, search: SearchViewModel, geometry: NotchGeometry) {
         self.panel = panel
         self.session = session
+        self.search = search
         self.geometry = geometry
         let driver = SpringDriver(window: panel)
         self.driver = driver
-        motion = LiquidMotionEngine(session: session, driver: driver)
+        motion = LiquidMotionEngine(content: session, driver: driver)
         driver.onChange = { [weak self] value in self?.progress = value }
         driver.onRest = { [weak self] value in self?.didSettle(at: value) }
         driver.onArrive = { [weak self] target, velocity in self?.didArrive(at: target, velocity: velocity) }
         driver.onFrame = { [weak self] dt in self?.stepEffects(dt) ?? false }
-        session.onOutput = { [weak self] in self?.motion.terminalDidChange() }
-        panel.onInput = { [weak self] type in self?.motion.terminalReceived(type) }
+        session.onOutput = { [weak self] in
+            guard let self else { return }
+            motion.contentDidChange(self.session)
+        }
+        search.session.onChange = { [weak self] in
+            guard let self else { return }
+            motion.contentDidChange(self.search.session)
+        }
+        panel.onInput = { [weak self] type in self?.motion.contentReceived(type) }
         panel.onEscape = { [weak self] in self?.handleEscape() ?? false }
         panel.onCloseShortcut = { [weak self] in self?.close() }
         panel.onResignKey = { [weak self] in self?.panelDidResignKey() }
         panel.onMouseDown = { [weak self] in self?.handleMouseDown() ?? false }
+        panel.onCommandKey = { [weak self] key in self?.handleCommandKey(key) ?? false }
     }
 
     // MARK: Liquid effect settings
 
-    /// Liquid effect strength, 0 (off: the live terminal animates, as it always did) … 1.
+    /// Liquid effect strength, 0 (off: the live content animates, as it always did) … 1.
     var effectIntensity: CGFloat {
         get { motion.intensity }
         set { motion.intensity = newValue }
@@ -120,11 +133,11 @@ final class NotchViewModel: SwipeTarget {
             state = .open
             panel.ignoresMouseEvents = false
             // Key without activating DEXMA: the frontmost app keeps its menu bar, and
-            // typing goes straight to the shell.
+            // typing goes straight to the selected tab.
             panel.allowsKey = true
-            session.container.isHidden = false
+            selectedView.isHidden = false
             panel.makeKey()
-            panel.makeFirstResponder(session.terminalView)
+            focusSelectedTab()
             // After focusing, so a fresh snapshot shows the caret the live view will have.
             if motion.begin(), fromClosed { effects.anticipate() }
         } else if progress != 1 {
@@ -138,6 +151,7 @@ final class NotchViewModel: SwipeTarget {
         // Before focus leaves: the snapshot must match the frame on screen right now.
         if progress != 0 { motion.begin() }
         if state != .closed {
+            if state == .open, tab == .search { search.session.rememberFocus(in: panel) }
             state = .closed
             // Click-through from the moment it starts closing, not when the animation ends.
             panel.ignoresMouseEvents = true
@@ -170,9 +184,12 @@ final class NotchViewModel: SwipeTarget {
     // MARK: Interactive (gesture)
 
     /// A swipe up may close it: the terminal shows its newest output (otherwise the swipe
-    /// scrolls it) and isn't running a full-screen program.
+    /// scrolls it) and isn't running a full-screen program; the Search page shows its end.
     var canCloseBySwipe: Bool {
-        session.isScrolledToBottom && !session.isRunningFullScreenProgram
+        switch tab {
+        case .terminal: session.isScrolledToBottom && !session.isRunningFullScreenProgram
+        case .search: search.session.isScrolledToBottom
+        }
     }
 
     /// Fingers landed where a swipe starts: get the screen warp's capture going early.
@@ -185,7 +202,7 @@ final class NotchViewModel: SwipeTarget {
         let fromClosed = state != .open && progress <= Self.peekProgress + 0.01
         if state != .open { moveToOpeningScreenIfClosed() }
         interactionBase = progress
-        session.container.isHidden = false
+        selectedView.isHidden = false
         if motion.begin(), fromClosed {
             effects.anticipate()
         }
@@ -231,8 +248,11 @@ final class NotchViewModel: SwipeTarget {
         guard newGeometry != geometry else { return }
         geometry = newGeometry
         panel.setFrame(newGeometry.panelFrame, display: true)
-        session.resize(to: newGeometry.terminalFrame.size)
-        motion.terminalDidChange()  // Resized: the cached snapshot no longer fits.
+        session.resize(to: newGeometry.contentFrame.size)
+        search.session.resize(to: newGeometry.contentFrame.size)
+        // Resized: the cached snapshots no longer fit.
+        motion.contentDidChange(session)
+        motion.contentDidChange(search.session)
     }
 
     private func moveToOpeningScreenIfClosed() {
@@ -263,6 +283,52 @@ final class NotchViewModel: SwipeTarget {
         motion.warmUp()
     }
 
+    // MARK: Tabs
+
+    /// Shows `newTab`'s content (and its band buttons) and gives it the keyboard if open.
+    func select(_ newTab: PanelTab) {
+        guard newTab != tab else { return }
+        let old = selectedView
+        tab = newTab
+        if progress > 0 || state != .closed { selectedView.isHidden = false }
+        if state == .open { focusSelectedTab() }
+        // After focus moved: hiding the first responder would send it elsewhere.
+        old.isHidden = true
+        motion.setContent(newTab == .terminal ? session : search.session)
+    }
+
+    /// The selected tab's AppKit view (terminal container or Search card).
+    private var selectedView: NSView {
+        switch tab {
+        case .terminal: session.container
+        case .search: search.session.card
+        }
+    }
+
+    private func focusSelectedTab() {
+        switch tab {
+        case .terminal: panel.makeFirstResponder(session.terminalView)
+        case .search: search.session.restoreFocus()
+        }
+    }
+
+    /// ⌘1/⌘2 pick a tab, ⌘L goes to the search field; ⌘[ ⌘] ⌘R browse on the Search tab.
+    private func handleCommandKey(_ key: String) -> Bool {
+        guard state == .open else { return false }
+        switch key {
+        case "1": select(.terminal)
+        case "2": select(.search)
+        case "l":
+            select(.search)
+            search.session.focusField()
+        case "[" where tab == .search: search.goBack()
+        case "]" where tab == .search: search.goForward()
+        case "r" where tab == .search: search.reloadOrStop()
+        default: return false
+        }
+        return true
+    }
+
     // MARK: Focus
 
     private func didSettle(at value: CGFloat) {
@@ -273,12 +339,13 @@ final class NotchViewModel: SwipeTarget {
             panel.orderOut(nil)
             panel.orderFrontRegardless()
         }
-        session.container.isHidden = true
+        selectedView.isHidden = true
     }
 
     private func handleEscape() -> Bool {
         // vim, less, htop… need Esc themselves.
-        guard state == .open, escClosesPanel, !session.isRunningFullScreenProgram else {
+        guard state == .open, escClosesPanel,
+              !(tab == .terminal && session.isRunningFullScreenProgram) else {
             return false
         }
         close()

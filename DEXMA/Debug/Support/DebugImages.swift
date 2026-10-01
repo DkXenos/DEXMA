@@ -1,5 +1,6 @@
 #if DEBUG
 import AppKit
+import ScreenCaptureKit
 
 /// Pictures for the debug harnesses: the window server's own composite of a window, pixel
 /// comparisons and PNG output.
@@ -13,6 +14,23 @@ enum DebugImages {
         let capture = unsafeBitCast(symbol, to: Capture.self)
         // includingWindow = 1 << 3; boundsIgnoreFraming = 1 << 0, bestResolution = 1 << 3.
         return capture(.null, 1 << 3, UInt32(window.windowNumber), (1 << 0) | (1 << 3))?.takeRetainedValue()
+    }
+
+    /// The real screen (DEXMA included) around `panel`, through ScreenCaptureKit: needs
+    /// DEXMA's Screen Recording grant (launch with `open`, not from a shell).
+    static func screen(around panel: NSPanel) async -> CGImage? {
+        guard let screen = panel.screen, let displayID = screen.displayID,
+              let content = try? await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true),
+              let display = content.displays.first(where: { $0.displayID == displayID }) else { return nil }
+        let filter = SCContentFilter(display: display, excludingWindows: [])
+        let configuration = SCStreamConfiguration()
+        let rect = panel.frame
+        configuration.sourceRect = CGRect(x: rect.minX - screen.frame.minX, y: screen.frame.maxY - rect.maxY,
+                                          width: rect.width, height: rect.height)
+        configuration.width = Int(rect.width * screen.backingScaleFactor)
+        configuration.height = Int(rect.height * screen.backingScaleFactor)
+        configuration.showsCursor = false
+        return try? await SCScreenshotManager.captureImage(contentFilter: filter, configuration: configuration)
     }
 
     /// `image` over opaque black, the way the live terminal shows over the silhouette.

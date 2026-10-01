@@ -1,9 +1,9 @@
 import AppKit
 
 /// Runs the liquid effect around every motion of the panel. While the panel moves, a snapshot
-/// of the terminal stands in for the live view (so the motion layer's shaders can bend it),
-/// and `MotionEffects` and the screen bend are stepped every display frame; the live terminal
-/// comes back once everything is exactly at rest. Between motions a fresh snapshot is kept
+/// of the selected tab's content stands in for the live view (so the motion layer's shaders
+/// can bend it), and `MotionEffects` and the screen bend are stepped every display frame; the
+/// live content comes back once everything is exactly at rest. Between motions a fresh snapshot is kept
 /// ready, so opening and closing normally capture nothing.
 final class LiquidMotionEngine {
     /// The effect's per-frame state; the motion layer renders it.
@@ -15,7 +15,7 @@ final class LiquidMotionEngine {
             bender?.wake = { [weak self] in self?.driver.wake() }
         }
     }
-    /// 0 (off: the live terminal animates, as it always did) … 1 (`EffectTuning.full`).
+    /// 0 (off: the live content animates, as it always did) … 1 (`EffectTuning.full`).
     var intensity: CGFloat = 1 {
         didSet {
             effects.tuning = EffectTuning.full.scaled(by: intensity)
@@ -23,19 +23,33 @@ final class LiquidMotionEngine {
         }
     }
 
-    private let session: ShellSession
+    /// The selected tab's content: what the snapshot pictures.
+    private(set) var content: MotionContent
     private let driver: SpringDriver
     private var snapshotRefreshPending = false
-    private var lastTerminalChange: CFTimeInterval = 0
+    private var lastContentChange: CFTimeInterval = 0
     #if DEBUG
     private var debugHoldsMotion = false
     #else
     private let debugHoldsMotion = false
     #endif
 
-    init(session: ShellSession, driver: SpringDriver) {
-        self.session = session
+    init(content: MotionContent, driver: SpringDriver) {
+        self.content = content
         self.driver = driver
+        content.onSnapshotRefreshed = { [weak self] in self?.snapshotRefreshed() }
+    }
+
+    /// Another tab was selected. Mid-motion its picture takes over right away (a quick capture
+    /// on a user's tab switch); at rest the next idle snapshot is of the new content.
+    func setContent(_ newContent: MotionContent) {
+        guard newContent !== content else { return }
+        content.onSnapshotRefreshed = nil
+        content = newContent
+        newContent.onSnapshotRefreshed = { [weak self] in self?.snapshotRefreshed() }
+        if effects.isActive { effects.show(newContent.motionSnapshot()) }
+        lastContentChange = CACurrentMediaTime()
+        scheduleIdleSnapshot()
     }
 
     /// The effect is skipped entirely with Reduce Motion or the intensity slider at Off.
@@ -43,7 +57,7 @@ final class LiquidMotionEngine {
         !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion && effects.tuning.isVisible
     }
 
-    /// Swaps the live terminal for its snapshot so the shaders can bend it. Returns whether
+    /// Swaps the live content for its snapshot so the shaders can bend it. Returns whether
     /// the motion layer is up. The snapshot is normally one taken while idle
     /// (`scheduleIdleSnapshot`); only a change in the last half second means taking one now,
     /// a few ms before the first frame.
@@ -51,12 +65,12 @@ final class LiquidMotionEngine {
     func begin() -> Bool {
         if effects.isActive {
             // Up already (mid-flight, or the launch warm-up): keep its snapshot if it has one.
-            if effects.snapshot == nil { effects.begin(with: session.snapshot()) }
+            if effects.snapshot == nil { effects.begin(with: content.motionSnapshot()) }
             return true
         }
         guard isEnabled else { return false }
         bender?.prepare()
-        effects.begin(with: session.snapshot())
+        effects.begin(with: content.motionSnapshot())
         return true
     }
 
@@ -88,19 +102,18 @@ final class LiquidMotionEngine {
         effects.land(velocity: velocity)
     }
 
-    /// Typing, clicking, dragging or scrolling reached the panel.
-    func terminalReceived(_ type: NSEvent.EventType) {
-        // Scroll events also arrive during a close swipe, with nothing left to scroll:
-        // only an actual scroll makes the snapshot stale.
-        if type == .scrollWheel, !session.snapshotScrolledAway { return }
-        terminalDidChange()
+    /// Typing, clicking, dragging or scrolling reached the panel (the selected tab).
+    func contentReceived(_ type: NSEvent.EventType) {
+        guard content.isChanged(by: type) else { return }
+        contentDidChange(content)
     }
 
-    /// The terminal may look different now (output, typing, a click, drag or scroll, a
-    /// resize): the cached snapshot is stale.
-    func terminalDidChange() {
-        session.invalidateSnapshot()
-        lastTerminalChange = CACurrentMediaTime()
+    /// `source` may look different now (output, typing, a click, drag or scroll, a page load,
+    /// a resize): its cached snapshot is stale. Only the selected tab's is retaken.
+    func contentDidChange(_ source: MotionContent) {
+        source.invalidateSnapshot()
+        guard source === content else { return }
+        lastContentChange = CACurrentMediaTime()
         scheduleIdleSnapshot()
     }
 
@@ -119,17 +132,21 @@ final class LiquidMotionEngine {
 
     // MARK: Private
 
-    /// Everything is at rest and every effect is exactly zero: the live terminal comes back
+    /// Everything is at rest and every effect is exactly zero: the live content comes back
     /// in the same frame the motion layer goes (both are SwiftUI state in one update).
     private func end(isOpen: Bool) {
         effects.end()
         _ = bender?.step(dt: 0, motion: nil)  // Hides the warp/glass unless the pointer needs it.
-        if isOpen {
-            session.restartCaretBlink()
-            // Taken while closed (no caret): retake it with the caret before the next close.
-            if session.snapshotMissesCaret { terminalDidChange() }
-        }
+        // E.g. taken while closed (no caret): retake it before the next close.
+        if isOpen, content.didReappear() { contentDidChange(content) }
         scheduleIdleSnapshot()
+    }
+
+    /// An asynchronous picture (the web page's) arrived. Mid-motion the one on screen stays:
+    /// replacing it would be main-thread work during the animation; `end` asks again.
+    private func snapshotRefreshed() {
+        guard !effects.isActive else { return }
+        _ = content.motionSnapshot()
     }
 
     /// The silhouette as drawn this frame and how hard it's moving, for bending the screen
@@ -153,23 +170,23 @@ final class LiquidMotionEngine {
             radius: shape.drawnBottomRadius, strength: strength, direction: direction)
     }
 
-    /// Takes the next snapshot once the terminal has been quiet for half a second and the
+    /// Takes the next snapshot once the content has been quiet for half a second and the
     /// panel is at rest, so opening and closing find one ready and do no work up front.
     private func scheduleIdleSnapshot() {
         guard isEnabled, !snapshotRefreshPending else { return }
         snapshotRefreshPending = true
         let quiet: CFTimeInterval = 0.5
-        let wait = max(quiet - (CACurrentMediaTime() - lastTerminalChange), 0.05)
+        let wait = max(quiet - (CACurrentMediaTime() - lastContentChange), 0.05)
         DispatchQueue.main.asyncAfter(deadline: .now() + wait) { [weak self] in
             guard let self else { return }
             self.snapshotRefreshPending = false
-            if CACurrentMediaTime() - self.lastTerminalChange < quiet {
+            if CACurrentMediaTime() - self.lastContentChange < quiet {
                 self.scheduleIdleSnapshot()  // Still busy: look again later.
                 return
             }
             // Mid-motion the snapshot on screen is in use; `end` asks again at rest.
             guard !self.driver.isAnimating, !self.driver.isHeld, !self.effects.isActive else { return }
-            _ = self.session.snapshot()
+            self.content.refreshSnapshot()
         }
     }
 
@@ -178,7 +195,7 @@ final class LiquidMotionEngine {
     /// and keeps it up until `debugEnd`.
     func debugBegin() {
         debugHoldsMotion = true
-        session.invalidateSnapshot()
+        content.invalidateSnapshot()
         begin()
     }
 

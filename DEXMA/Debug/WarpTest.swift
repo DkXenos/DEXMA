@@ -68,12 +68,12 @@ enum WarpTest {
             // 4. Colour match: warp layer covering everything with zero bend vs no warp layer.
             notch.close()
             _ = await notch.waitForRest()
-            if let plain = await screenImage(around: panel) {
+            if let plain = await DebugImages.screen(around: panel) {
                 bender.debugFullCoverage = true
                 notch.debugBeginMotion()
                 notch.debugPose(progress: 0, effect: .init(stretch: 0, bulge: 0, energy: 0))
                 try? await Task.sleep(for: .milliseconds(200))
-                if let covered = await screenImage(around: panel) {
+                if let covered = await DebugImages.screen(around: panel) {
                     report.line("colour match (warp layer, zero bend, vs real screen): \(compare(covered, plain))")
                     DebugImages.write(plain, dir, "screen-plain")
                     DebugImages.write(covered, dir, "screen-zero-bend")
@@ -89,7 +89,7 @@ enum WarpTest {
                 notch.debugPose(progress: progress,
                                 effect: .init(stretch: stretch, bulge: name == "anticipation" ? 0.07 : 0, energy: energy))
                 try? await Task.sleep(for: .milliseconds(150))
-                if let image = await screenImage(around: panel) { DebugImages.write(image, dir, "warp-\(name)") }
+                if let image = await DebugImages.screen(around: panel) { DebugImages.write(image, dir, "warp-\(name)") }
             }
             notch.debugPose(progress: 0, effect: .init())
             notch.debugEndMotion()
@@ -126,22 +126,6 @@ enum WarpTest {
                            intervals.count, late, intervals.max() ?? 0, FramePacingProbe.percentile(busy, 0.5),
                            FramePacingProbe.percentile(busy, 0.95), busy.max() ?? 0,
                            after.frames - before.frames, after.longestGap * 1000))
-    }
-
-    /// The real screen (DEXMA included) around the panel.
-    private static func screenImage(around panel: NSPanel) async -> CGImage? {
-        guard let screen = panel.screen, let displayID = screen.displayID,
-              let content = try? await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true),
-              let display = content.displays.first(where: { $0.displayID == displayID }) else { return nil }
-        let filter = SCContentFilter(display: display, excludingWindows: [])
-        let configuration = SCStreamConfiguration()
-        let rect = panel.frame
-        configuration.sourceRect = CGRect(x: rect.minX - screen.frame.minX, y: screen.frame.maxY - rect.maxY,
-                                          width: rect.width, height: rect.height)
-        configuration.width = Int(rect.width * screen.backingScaleFactor)
-        configuration.height = Int(rect.height * screen.backingScaleFactor)
-        configuration.showsCursor = false
-        return try? await SCScreenshotManager.captureImage(contentFilter: filter, configuration: configuration)
     }
 
     /// Colour only: the screen captures are opaque.

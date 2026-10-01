@@ -14,9 +14,11 @@ final class NotchPanel: NSPanel {
     var onResignKey: (() -> Void)?
     /// A click on the panel while it's not taking mouse input for the terminal (peek state).
     var onMouseDown: (() -> Bool)?
-    /// Typing, clicking, dragging or scrolling reached the panel: what the terminal shows
+    /// Typing, clicking, dragging or scrolling reached the panel: what the selected tab shows
     /// may have changed.
     var onInput: ((NSEvent.EventType) -> Void)?
+    /// Any other ⌘-key (the key without modifiers, lowercased). Return true if handled.
+    var onCommandKey: ((String) -> Bool)?
 
     init(frame: CGRect) {
         super.init(contentRect: frame, styleMask: [.borderless, .nonactivatingPanel],
@@ -71,7 +73,8 @@ final class NotchPanel: NSPanel {
     }
 
     // Key equivalents reach the key window before any menu. A key panel of an inactive agent
-    // app gets no Edit menu, so the basics are routed to the terminal here.
+    // app gets no Edit menu, so the basics are routed to the first responder (terminal, search
+    // field or page) here.
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
         let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
         guard flags == .command, let key = event.charactersIgnoringModifiers?.lowercased() else {
@@ -87,6 +90,7 @@ final class NotchPanel: NSPanel {
         case "q":
             return true  // Quitting would kill the shell; quit from the menu bar item instead.
         default:
+            if onCommandKey?(key) == true { return true }
             return super.performKeyEquivalent(with: event)
         }
     }

@@ -20,6 +20,11 @@ struct TerminalSnapshot: Equatable {
         a.image === b.image
     }
 
+    /// The picture as the motion layer takes it.
+    var content: ContentSnapshot {
+        ContentSnapshot(image: image, scale: scale)
+    }
+
     static func capture(_ view: TerminalView) -> TerminalSnapshot? {
         let bounds = view.bounds
         guard bounds.width > 0, bounds.height > 0,

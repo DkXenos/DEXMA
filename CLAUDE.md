@@ -9,8 +9,10 @@ like a third-party app.
 - **Trigger:** two-finger swipe DOWN starting at the top edge of the trackpad (raw touches
   via OpenMultitouchSupport). The panel follows finger progress 1:1, then settles with a
   velocity-aware spring on release. Global hotkey (default ⌥`) is the fallback.
-- **Open:** the notch morphs into a wide terminal (SwiftTerm `LocalProcessTerminalView`)
-  running a persistent zsh, spawned at app launch and never killed when the panel closes.
+- **Open:** the notch morphs into a wide panel with two tabs (segments left of the notch,
+  ⌘1/⌘2): **Terminal** — SwiftTerm `LocalProcessTerminalView` running a persistent zsh,
+  spawned at app launch and never killed when the panel closes — and **Search** — a search
+  field over a `WKWebView` (Google search, or any address), its buttons right of the notch.
 - **Close:** swipe up, Esc, or hotkey. Focus returns to the previously active app.
 
 ## Architecture — feature-based MVVM
@@ -76,11 +78,14 @@ Layers — keep them separated:
 - `Notch/` — the panel. `NotchViewModel`: single source of truth, `progress` (0 = notch,
   1 = expanded) + `PanelState` (closed/peek/open); hotkey, gesture, hover and the menu bar
   item all drive it; owns the panel window and focus; derives the silhouette, content
-  opacity and hover zone for the view. Views: `NotchPanel` — borderless non-activating
+  opacity and hover zone for the view; owns the selected `PanelTab` (Model) and gives each
+  tab the keyboard. Views: `NotchPanel` — borderless non-activating
   `NSPanel` above the menu bar; `canJoinAllSpaces` + `fullScreenAuxiliary` + `stationary`;
   transparent; ordered in at launch, never ordered out. `PanelContentView` — the panel's
   flipped content view (warp/glass below, `NSHostingView` above). `NotchContentView` —
-  SwiftUI root, everything from the view model. Services: `NotchGeometryProvider` (screen
+  SwiftUI root, everything from the view model. `NotchBand` — the strip beside the notch:
+  `TabBand` (segments + selection indicator) left, `SearchActionsBand` right; every control is
+  a `BandButtonStyle`/`BandControl` (white 12 % hover fill). Services: `NotchGeometryProvider` (screen
   choice, size clamp, `-forcePill`), `HoverMonitor` (pointer over the notch → peek),
   `FocusHandoff` (keyboard back to the previous app).
 - `Terminal/` — `ShellSession`: ONE long-lived `LocalProcessTerminalView` + zsh (respawned
@@ -88,6 +93,11 @@ Layers — keep them separated:
   `TerminalContainerView` (fixed frame, masked to the shape), `TerminalHost` (the
   `NSViewRepresentable` that hands that same view to SwiftUI). Never recreated. Model:
   `TerminalSnapshot` (pixel-exact picture of the live terminal).
+- `Search/` — `SearchSession` (Service): ONE long-lived `SearchCardView` (AppKit field + the
+  `WKWebView`, dark appearance, nothing loaded until the first search), navigation/UI
+  delegates, a scroll script (page at its end → a swipe up may close), and the card's
+  snapshot. `SearchViewModel` (back/forward/loading for the band). `SearchHost` (the
+  `NSViewRepresentable`). Model: `SearchQuery` (text → Google search or address, pure).
 - `Gestures/` — Models: `GestureRecognizer` (pure, unit-tested), `TouchPoint`,
   `GestureParameters`, `GestureEvent`. Services: `GestureEngine` (OpenMultitouchSupport
   frames → recognizer → `SwipeTarget`, i.e. `NotchViewModel`), `ScrollBlocker`/`ScrollGate`
@@ -96,9 +106,11 @@ Layers — keep them separated:
 - `LiquidMotion/` (only while moving) — Models: `EffectTuning` (every constant +
   `scaled(by:)` for the Settings "Effect intensity" slider), `MotionEffects` (@Observable
   per-frame state: jelly stretch/wobble, energy, anticipation bulge), `Silhouette` (the shape
-  at a progress with the frame's squash and stretch — the one place it's computed). Service:
-  `LiquidMotionEngine` (the effect around every motion: snapshot swap, per-frame step, idle
-  snapshots, screen bend). View: `LiquidMotionLayer` + `Shaders/LiquidEffects.metal` (SwiftUI
+  at a progress with the frame's squash and stretch — the one place it's computed),
+  `ContentSnapshot` (the picture the motion layer bends). Services: `LiquidMotionEngine` (the
+  effect around every motion: snapshot swap, per-frame step, idle snapshots, screen bend),
+  `MotionContent` (protocol the selected tab's content implements: `ShellSession`,
+  `SearchSession` — the engine knows neither). View: `LiquidMotionLayer` + `Shaders/LiquidEffects.metal` (SwiftUI
   `distortionEffect` stretch and `layerEffect` lens/aberration/light over the terminal
   snapshot).
 - `ScreenWarp/` — `ScreenBender` bends the real screen around the notch: owns
@@ -135,9 +147,10 @@ Layers — keep them separated:
   the link pauses). The black silhouette is always the same vector `shape.fill` —
   squash/stretch/bulge only scale `NotchShape`'s width/height about the top centre
   (`Frame.scale`, through `Silhouette`; exactly 1 × 1 at rest).
-  Shaders touch only the content: while moving, `LiquidMotionLayer` shows a `TerminalSnapshot`
-  (the live terminal's mask opacity goes to 0 — never `isHidden`, which would drop first
-  responder), bent by the shaders and clipped to the silhouette. At rest the motion layer is
+  Shaders touch only the content: while moving, `LiquidMotionLayer` shows the selected tab's
+  `ContentSnapshot` (the live view's mask opacity goes to 0 — never `isHidden`, which would
+  drop first responder), bent by the shaders and clipped to the silhouette. The band beside
+  the notch stays live (SwiftUI), given the same squash/stretch as a `scaleEffect`. At rest the motion layer is
   transparent with `isEnabled: false`. The only thing ever swapped is the text, in one
   SwiftUI update. Snapshots are taken while idle (0.5 s after the last output/input/scroll),
   so `open`/`close` normally do no capture. Reduce Motion or intensity Off → the effect is
@@ -203,6 +216,10 @@ Layers — keep them separated:
 - [x] 10. Liquid lens effect while opening/closing + haptics (branch `feature/distortion`,
   not merged: the user tests the feel first).
 - [x] 11. Feature-based MVVM refactor (branch `refactor/mvvm`, from `feature/distortion`).
+- [x] 12. Tabs (Terminal / Search) beside the notch + Google search in a `WKWebView`
+  (branch `feature/tabs`, from `refactor/mvvm`).
+- [ ] 13. Hover warp on the band's controls (same distortion system), press squash, droplet
+  selection indicator.
 
 The user asked (2026-10-01) to run phases 2–8 without stopping between them: per phase, read
 package sources, build to 0 errors/0 warnings, launch-check, `git commit -m "Phase N: …"`,
@@ -349,13 +366,34 @@ update Progress below.
   `-effecttest` frame byte-identical, `-selftest` output identical, all six interaction checks
   OK, pacing as before (0–1 late frames).
 
+- **Phase 12 (tabs + Search):** the user asked for tabs and a Google search (2026-10-01; their
+  spec for this part was lost, so the layout was agreed in chat: tabs left of the notch,
+  buttons right, search field on top of the card; phases 12–13 back to back). `NotchGeometry`:
+  `bandHeight` (notch height, ≥ 28 pt for the pill), `tabBandFrame`/`actionBandFrame`,
+  `terminalFrame` → `contentFrame` (same place on notched screens; the pill's card moved down
+  to fit the 28 pt band). The motion engine works on `MotionContent`; the Search card pictures
+  itself as AppKit's `cacheDisplay` of the field strip + WebKit's `takeSnapshot` of the page
+  (async, while idle), composed in the page's colour space. Focus: the terminal, or for Search
+  whatever had it when the panel closed (page, else the field with its text selected); ⌘L →
+  field; Esc closes on both tabs (vim etc. still get it on the terminal). Swipe-up closes the
+  Search tab only at the page's end. Verified (`-tabtest`, Debug): 14 checks OK (switching,
+  focus, ⌘-keys, a real Google search ~1–2 s, swipe rule at top/end, interrupted motions, tab
+  switch mid-open); Search snapshot vs live at rest: visually identical (WebKit's picture vs
+  its on-screen render differ at anti-aliasing level, median 15/255, plus the overlay scroll
+  bar, which WebKit leaves out); pacing on Search 0 late frames, open/close calls 2.5–6 ms
+  (like the terminal). Terminal tab vs the pre-tabs build: every `-effecttest` pose/rest/swap
+  PNG byte-identical below the band, same numbers, `-selftest` identical, 32 unit tests.
+  Unverified (needs the user): typing in Google's own fields, IME in the search field, sign-in
+  pages, video/audio while closed (the hidden web view may pause media), feel of the band.
+
 ## Debug snapshots
 Screen Recording isn't granted to the CLI, but an app can render its own window. Debug builds
 (`DEXMA/Debug/`, flags dispatched by `DebugHarness`) accept `-selftest` (open/close via the controller, printing key window, first responder and
 frontmost app at each step) and `-snapshot <dir>`: they type `ls /` into the shell, render the panel at progress
 0/0.15/0.5/1 to PNGs, and quit. Run the binary directly:
 `.../Debug/DEXMA.app/Contents/MacOS/DEXMA -snapshot /tmp/snap`, then view the PNGs.
-`-effecttest <dir>` checks the liquid effect against the window server's own composite of the
+`-tabtest <dir>` checks the tabs and the Search tab (needs network: it runs a real Google
+search; launched with `open` it also captures the real screen). `-effecttest <dir>` checks the liquid effect against the window server's own composite of the
 panel (`CGWindowListCreateImage` via `dlsym`: deprecated, but an app may capture its own
 window without Screen Recording): snapshot fidelity, motion layer vs live at rest, a real
 swap-back frame by frame, frame pacing with the effect on/off, gesture/interruption end
@@ -410,5 +448,11 @@ and never quits (wrap runs in a watchdog).
 - Hiding (`isHidden`) the view that is first responder moves first responder away; fade it
   via layer opacity instead.
 - `NSGraphicsContext(bitmapImageRep:)` of a 2x rep is already in points — don't scale again.
+- A `WKWebView` added to a zero-sized superview with autoresizing grows by the superview's
+  whole size when that gets its frame (the page showed 2× and cut off): set its frame outright.
+- `cacheDisplay` over a view containing a `WKWebView` makes WebKit render synchronously
+  (~20 ms): picture around it and use `takeSnapshot` (async) for the page.
+- Making the search field first responder and selecting its text costs ~2–8 ms with the panel
+  becoming key; keep it off the open path when the page had the keyboard.
 - SwiftUI shaders: `layerEffect`/`distortionEffect` exist on macOS 14; `Shader.compile(as:)`
   is macOS 15+ (on 14, render the effect once at launch to warm it).

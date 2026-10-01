@@ -41,7 +41,7 @@ enum EffectTest {
         session.restartCaretBlink()  // Caret at full opacity, as snapshots draw it.
         guard let truth = DebugImages.window(panel) else { return print("[effect] window capture failed") }
         let scale = panel.backingScaleFactor
-        let frame = notch.geometry.terminalFrame
+        let frame = notch.geometry.contentFrame
         let crop = CGRect(x: frame.minX * scale, y: frame.minY * scale,
                           width: frame.width * scale, height: frame.height * scale)
         var times: [Double] = []

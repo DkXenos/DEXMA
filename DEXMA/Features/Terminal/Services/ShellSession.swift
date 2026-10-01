@@ -3,13 +3,14 @@ import SwiftTerm
 
 /// Owns the one long-lived terminal view and the zsh inside it. Created at launch; the shell
 /// keeps running while the panel is closed and is respawned whenever it exits.
-final class ShellSession: NSObject, LocalProcessTerminalViewDelegate {
+final class ShellSession: NSObject, LocalProcessTerminalViewDelegate, MotionContent {
     static let shell = "/bin/zsh"
 
     let container: TerminalContainerView
     var terminalView: LocalProcessTerminalView { container.terminalView }
     /// The shell printed something.
     var onOutput: (() -> Void)?
+    var onSnapshotRefreshed: (() -> Void)?
     private var lastStart = Date.distantPast
     private var cachedSnapshot: TerminalSnapshot?
     private var snapshotScrollPosition: Double = 0
@@ -58,6 +59,29 @@ final class ShellSession: NSObject, LocalProcessTerminalViewDelegate {
     func restartCaretBlink() {
         guard terminalView.hasFocus else { return }
         terminalView.caretViewTracksFocus = terminalView.caretViewTracksFocus
+    }
+
+    // MARK: MotionContent
+
+    func motionSnapshot() -> ContentSnapshot? {
+        snapshot()?.content
+    }
+
+    /// Captured synchronously (a few ms), so it never needs `onSnapshotRefreshed`.
+    func refreshSnapshot() {
+        _ = snapshot()
+    }
+
+    func isChanged(by type: NSEvent.EventType) -> Bool {
+        // Scroll events also arrive during a close swipe, with nothing left to scroll:
+        // only an actual scroll makes the snapshot stale.
+        type != .scrollWheel || snapshotScrolledAway
+    }
+
+    func didReappear() -> Bool {
+        restartCaretBlink()
+        // Taken while closed (no caret): retake it with the caret.
+        return snapshotMissesCaret
     }
 
     func resize(to size: CGSize) {
