@@ -11,11 +11,15 @@ struct NotchBand: View {
         let actions = geometry.actionBandFrame
 
         ZStack(alignment: .topLeading) {
-            TabBand(selected: viewModel.tab, size: tabs.size) { viewModel.select($0) }
-                .offset(x: tabs.minX, y: tabs.minY)
+            TabBand(selected: viewModel.tab, band: viewModel.band, size: tabs.size) { tab in
+                viewModel.click { viewModel.select(tab) }
+            }
+            .offset(x: tabs.minX, y: tabs.minY)
             if viewModel.tab == .search {
-                SearchActionsBand(search: viewModel.search, size: actions.size)
-                    .offset(x: actions.minX, y: actions.minY)
+                SearchActionsBand(search: viewModel.search, band: viewModel.band, size: actions.size) { action in
+                    viewModel.click(action)
+                }
+                .offset(x: actions.minX, y: actions.minY)
             }
         }
         .frame(width: geometry.panelFrame.width, height: geometry.panelFrame.height, alignment: .topLeading)

@@ -1,6 +1,7 @@
 import CoreGraphics
 
-/// Every constant of the liquid open/close effect. `full` is the designed look; the Settings
+/// Every constant of the liquid effect (the notch opening/closing, and the band controls'
+/// hover lens, press and selection indicator). `full` is the designed look; the Settings
 /// "Effect intensity" slider scales it with `scaled(by:)`. Velocities are in progress units
 /// per second (progress 0 → 1 is closed → open); lengths are in points.
 nonisolated struct EffectTuning: Equatable {
@@ -62,6 +63,34 @@ nonisolated struct EffectTuning: Equatable {
     /// around 3–4; a fast flick goes well past it.
     var referenceVelocity: CGFloat = 3
 
+    // MARK: Band controls (tab segments, Search buttons; see ControlLens, BandMotion)
+    /// The lens on a hovered control, resting: magnification at its centre, which follows the
+    /// pointer (0.05 ≈ 1.05×: the label stays easy to read).
+    var controlLens: CGFloat = 0.05
+    /// Lens radius as a multiple of the control's height.
+    var controlLensRadius: CGFloat = 1.1
+    /// The "breath" as the pointer enters: everything below swells to full for a moment, then
+    /// settles to `controlRest` of it (the gentle resting lens).
+    var controlBreathDuration: Double = 0.34
+    var controlRest: CGFloat = 0.4
+    /// At the breath's peak: how much the control swells, the rim refraction and RGB split at its
+    /// edge (pt), and the specular light's opacity. Kept small: felt more than seen.
+    var controlBulge: CGFloat = 0.035
+    var controlRefraction: CGFloat = 2.2
+    var controlAberration: CGFloat = 0.7
+    var controlHighlight: CGFloat = 0.22
+    /// Time constant (s) of the lens centre and light chasing the pointer: lower follows tighter.
+    var controlFollow: Double = 0.05
+    /// Press (mouse down): squash at full press (fraction of the height), and the spring that
+    /// pushes it in and lets it spring back past rest on release.
+    var pressSquash: CGFloat = 0.09
+    var pressFrequency: CGFloat = 7  // Hz
+    var pressDamping: CGFloat = 0.42
+    /// Selection indicator sliding between tabs: stretch per unit of speed (segments per
+    /// second) along the motion, chased by the same jelly spring as the notch, and its limit.
+    var indicatorStretch: CGFloat = 0.014
+    var indicatorMaxStretch: CGFloat = 0.1
+
     static let full = EffectTuning()
 
     /// Everything visual scaled by `intensity` (0 = no effect at all, 1 = `full`).
@@ -80,7 +109,21 @@ nonisolated struct EffectTuning: Equatable {
         t.aberration *= k
         t.highlight *= k
         t.glow *= k
+        t.controlLens *= k
+        t.controlBulge *= k
+        t.controlRefraction *= k
+        t.controlAberration *= k
+        t.controlHighlight *= k
+        t.pressSquash *= k
+        t.indicatorStretch *= k
+        t.indicatorMaxStretch *= k
         return t
+    }
+
+    /// False when the band's controls get no liquid effect at all: only the plain hover fill.
+    var controlsVisible: Bool {
+        controlLens > 0 || controlBulge > 0 || controlRefraction > 0 || controlAberration > 0
+            || controlHighlight > 0
     }
 
     /// False when scaled to nothing: the motion layer and its shaders are skipped entirely.

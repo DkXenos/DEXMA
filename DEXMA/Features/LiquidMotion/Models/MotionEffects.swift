@@ -33,14 +33,23 @@ final class MotionEffects {
     /// The motion layer (snapshot + shaders) is on screen instead of the live content.
     private(set) var isActive = false
     private(set) var snapshot: ContentSnapshot?
+    /// The launch warm-up (see `LiquidMotionEngine.warmUp`): the layer also renders the band
+    /// controls' shader once, so the first hover doesn't compile it.
+    private(set) var isWarmUp = false
 
     @ObservationIgnored var tuning = EffectTuning.full
-    @ObservationIgnored private var jellyVelocity: CGFloat = 0
+    @ObservationIgnored private var jelly = JellySpring()
     @ObservationIgnored private var anticipationTime: Double?
 
     func begin(with snapshot: ContentSnapshot?) {
         if let snapshot, snapshot != self.snapshot { self.snapshot = snapshot }
         isActive = true
+    }
+
+    /// Up with no picture, only to render the shaders once at launch.
+    func beginWarmUp() {
+        isWarmUp = true
+        begin(with: nil)
     }
 
     /// Another tab's content took over mid-motion: show its picture instead (even none).
@@ -51,9 +60,10 @@ final class MotionEffects {
     /// Back to the live content. Only called once everything is at rest.
     func end() {
         frame = Frame()
-        jellyVelocity = 0
+        jelly.reset()
         anticipationTime = nil
         isActive = false
+        isWarmUp = false
     }
 
     /// The notch is about to open from closed: swell for a moment first.
@@ -65,7 +75,7 @@ final class MotionEffects {
     /// The panel just reached open or closed at `velocity`: a squash that rings out.
     func land(velocity: CGFloat) {
         let omega = 2 * .pi * tuning.jellyFrequency
-        jellyVelocity -= tuning.wobble * abs(velocity) * omega
+        jelly.velocity -= tuning.wobble * abs(velocity) * omega
     }
 
     /// Advances one display frame. `velocity` is the panel's speed on screen (progress/s).
@@ -75,21 +85,10 @@ final class MotionEffects {
         let t = tuning
         let limit = t.maxStretch
 
-        // Jelly: an underdamped spring chasing a stretch proportional to the speed. Sub-stepped
-        // so a long frame after a hitch stays stable.
+        // Jelly: an underdamped spring chasing a stretch proportional to the speed.
         let target = min(t.stretchPerVelocity * abs(velocity), limit)
-        let omega = 2 * .pi * t.jellyFrequency
-        let steps = max(1, Int((dt * 240).rounded(.up)))
-        let h = CGFloat(dt) / CGFloat(steps)
-        for _ in 0..<steps {
-            let acceleration = omega * omega * (target - next.stretch) - 2 * t.jellyDamping * omega * jellyVelocity
-            jellyVelocity += acceleration * h
-            next.stretch = min(max(next.stretch + jellyVelocity * h, -limit), limit)
-        }
-        if target == 0, abs(next.stretch) < 0.0002, abs(jellyVelocity) < 0.002 {
-            next.stretch = 0
-            jellyVelocity = 0
-        }
+        jelly.step(dt: dt, target: target, frequency: t.jellyFrequency, damping: t.jellyDamping, limit: limit)
+        next.stretch = jelly.value
 
         // Energy: quick to rise, a little slower to fall; snaps to zero once the motion stops.
         let targetEnergy = min(abs(velocity) / t.referenceVelocity, 1)
@@ -110,7 +109,7 @@ final class MotionEffects {
         }
 
         if next != frame { frame = next }
-        return next != Frame() || jellyVelocity != 0 || anticipationTime != nil
+        return next != Frame() || jelly.velocity != 0 || anticipationTime != nil
     }
 
     #if DEBUG

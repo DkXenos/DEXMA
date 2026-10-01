@@ -84,8 +84,9 @@ Layers — keep them separated:
   transparent; ordered in at launch, never ordered out. `PanelContentView` — the panel's
   flipped content view (warp/glass below, `NSHostingView` above). `NotchContentView` —
   SwiftUI root, everything from the view model. `NotchBand` — the strip beside the notch:
-  `TabBand` (segments + selection indicator) left, `SearchActionsBand` right; every control is
-  a `BandButtonStyle`/`BandControl` (white 12 % hover fill). Services: `NotchGeometryProvider` (screen
+  `TabBand` (segments + the droplet selection indicator) left, `SearchActionsBand` right;
+  every control is a `BandButtonStyle`/`BandControl` (white 12 % hover fill, under the
+  liquid lens while hovered/pressed). Clicks go through `NotchViewModel.click` (haptic tick). Services: `NotchGeometryProvider` (screen
   choice, size clamp, `-forcePill`), `HoverMonitor` (pointer over the notch → peek),
   `FocusHandoff` (keyboard back to the previous app).
 - `Terminal/` — `ShellSession`: ONE long-lived `LocalProcessTerminalView` + zsh (respawned
@@ -107,12 +108,16 @@ Layers — keep them separated:
   `scaled(by:)` for the Settings "Effect intensity" slider), `MotionEffects` (@Observable
   per-frame state: jelly stretch/wobble, energy, anticipation bulge), `Silhouette` (the shape
   at a progress with the frame's squash and stretch — the one place it's computed),
-  `ContentSnapshot` (the picture the motion layer bends). Services: `LiquidMotionEngine` (the
-  effect around every motion: snapshot swap, per-frame step, idle snapshots, screen bend),
+  `ContentSnapshot` (the picture the motion layer bends), `JellySpring` (the jelly: notch
+  stretch/wobble and the indicator's), `BandMotion` (the band: a `ControlLens` per control —
+  hover breath/rest lens, cursor follow, press squash — and the selection indicator's droplet
+  slide). Services: `LiquidMotionEngine` (the effect around every motion: snapshot swap,
+  per-frame step, idle snapshots, screen bend, and the band's frames),
   `MotionContent` (protocol the selected tab's content implements: `ShellSession`,
-  `SearchSession` — the engine knows neither). View: `LiquidMotionLayer` + `Shaders/LiquidEffects.metal` (SwiftUI
-  `distortionEffect` stretch and `layerEffect` lens/aberration/light over the terminal
-  snapshot).
+  `SearchSession` — the engine knows neither). Views: `LiquidMotionLayer` +
+  `Shaders/LiquidEffects.metal` (SwiftUI `distortionEffect` stretch and `layerEffect`
+  lens/aberration/light over the content snapshot), `ControlLensEffect` (the same file's
+  `liquidControlLens` on one band control).
 - `ScreenWarp/` — `ScreenBender` bends the real screen around the notch: owns
   `ScreenCapture` (a ScreenCaptureKit stream of the panel's screen rect, DEXMA excluded, run
   only around intent) and `ScreenWarpView` + `Shaders/ScreenWarp.metal` (a CAMetalLayer below
@@ -171,6 +176,20 @@ Layers — keep them separated:
   ~1.6 %, WindowServer unchanged; 0 when not capturing (`-captureidle <s>` probe). Without the permission:
   the Liquid Glass ring (narrow, clamped to the window). `CGPreflightScreenCaptureAccess`
   costs ~10 ms: only ever called off the main thread (cached).
+- Band controls (Phase 13): the same system, locally. `BandMotion` steps on the panel's display
+  link (`LiquidMotionEngine.step`, woken by hover/press/select; paused once exactly zero).
+  Hover: a breath (everything to full over `controlBreathDuration`, then `controlRest` of it)
+  and a magnifier + glint at the pointer (`controlFollow` smoothing); exit decays to exactly 0.
+  The shader runs on the SwiftUI control itself (no snapshot), padded by a 4 pt margin =
+  `maxSampleOffset` (offsets clamped in the shader): it can't reach the notch gap (12 pt) or the
+  card (6 pt below the band). Press: `JellySpring` squash, springs past rest on release; click
+  → `Haptics.tap()` (never on hover). Indicator: SwiftUI `Spring` (0.4 s, bounce 0.25) + the
+  notch's jelly (stretch ∝ speed in segments/s, same landing kick ratio). Reduce Motion: no
+  lens/squash, indicator jumps; intensity Off: plain hover fill, indicator slides unstretched.
+  The `layerEffect` stays attached (enabled only while active): attaching/removing it switches
+  the label's anti-aliasing (a tick), so the control always renders offscreen; idle it never
+  redraws, so there's no GPU cost. Warm-up: `compile(as:)` on macOS 15+, a 16 pt probe in the
+  motion layer's launch warm-up on 14.
 - Overshoot past fully open eases into the window's room (`NotchGeometry.overshoot`, tanh) and
   squash/stretch is clamped to `silhouetteLimit()`: a fast flick used to run the silhouette
   past the window's bottom edge (a hard straight cut). Identical at progress ≤ 1.
@@ -218,8 +237,8 @@ Layers — keep them separated:
 - [x] 11. Feature-based MVVM refactor (branch `refactor/mvvm`, from `feature/distortion`).
 - [x] 12. Tabs (Terminal / Search) beside the notch + Google search in a `WKWebView`
   (branch `feature/tabs`, from `refactor/mvvm`).
-- [ ] 13. Hover warp on the band's controls (same distortion system), press squash, droplet
-  selection indicator.
+- [x] 13. Hover warp on the band's controls (same distortion system), press squash, droplet
+  selection indicator (branch `feature/tabs`).
 
 The user asked (2026-10-01) to run phases 2–8 without stopping between them: per phase, read
 package sources, build to 0 errors/0 warnings, launch-check, `git commit -m "Phase N: …"`,
@@ -386,13 +405,44 @@ update Progress below.
   Unverified (needs the user): typing in Google's own fields, IME in the search field, sign-in
   pages, video/audio while closed (the hidden web view may pause media), feel of the band.
 
+- **Phase 13 (hover warp):** the user's spec (2026-10-01): reuse the distortion system, subtle
+  liquid glass under the pointer, press squash + click haptic, droplet indicator, confined to
+  the control, zero cost at rest, Off/Reduce Motion fall back to the plain control. The open/
+  close tuning is unchanged (`JellySpring` is the old loop, verified equal step by step).
+  Verified (`-hovertest`, Debug; hover driven through `ControlLens.hover(at:)` because
+  synthetic `mouseMoved` events don't reach SwiftUI's hover tracking): breath peaks at 0.95 →
+  rests at 0.40; warp confined to control + margin on a tab segment and the Reload button
+  (never the notch gap/card); exit → 0 px vs before; shader attached at ~zero strength → 0 px
+  (no tick on enter/exit); press squash 1.04 × 0.90 then rebound; click → Search with the
+  indicator stretching to 0.10, landing at −0.005, resting at exactly 1 × 1; Off → 0 px change;
+  Reduce Motion → jump, no lens, no squash; closing leaves nothing running. 120 Hz pointer glide
+  + typing into the terminal: 0–1 late frames (same noise as the baseline that day), main-thread
+  p95 ~3.5 ms, each key handled in p95 0.6 ms. `-effecttest`/`-selftest` as before; 38 unit
+  tests. Tab labels now render through the effect's offscreen layer: sub-pixel anti-aliasing
+  differences vs Phase 12's capture (invisible), identical before/during-at-zero/after a hover.
+
+## Hardware test checklist (needs the user)
+- Tabs: ⌘1/⌘2/⌘L, clicking segments, focus after reopening (page vs field), Esc on both tabs.
+- Search: a Google search, typing in Google's own fields, IME in the field, link clicks,
+  target=_blank links, back/forward/reload/open in browser, swipe-up closes only at the page's
+  end, video/audio while closed, sign-in pages.
+- Hover warp on the tab segments (both tabs) and the Search buttons; cursor-follow smoothness;
+  exit decays fully to crisp text; press squash (and the spring back); the click tick (not on
+  hover); the indicator's droplet stretch when switching tabs.
+- Effect intensity Off (plain hover fill only); Reduce Motion (no warp/squash, instant
+  indicator).
+- Terminal typing stays smooth while hovering the band.
+- The open/close effect on both tabs feels as before.
+
 ## Debug snapshots
 Screen Recording isn't granted to the CLI, but an app can render its own window. Debug builds
 (`DEXMA/Debug/`, flags dispatched by `DebugHarness`) accept `-selftest` (open/close via the controller, printing key window, first responder and
 frontmost app at each step) and `-snapshot <dir>`: they type `ls /` into the shell, render the panel at progress
 0/0.15/0.5/1 to PNGs, and quit. Run the binary directly:
 `.../Debug/DEXMA.app/Contents/MacOS/DEXMA -snapshot /tmp/snap`, then view the PNGs.
-`-tabtest <dir>` checks the tabs and the Search tab (needs network: it runs a real Google
+`-hovertest <dir>` checks the band controls' liquid glass (lens, confinement, exit, press,
+indicator, Off, Reduce Motion, pacing with typing); `-bandshot <dir>` just captures the open
+band at rest (for comparing builds). `-tabtest <dir>` checks the tabs and the Search tab (needs network: it runs a real Google
 search; launched with `open` it also captures the real screen). `-effecttest <dir>` checks the liquid effect against the window server's own composite of the
 panel (`CGWindowListCreateImage` via `dlsym`: deprecated, but an app may capture its own
 window without Screen Recording): snapshot fidelity, motion layer vs live at rest, a real
@@ -448,6 +498,12 @@ and never quits (wrap runs in a watchdog).
 - Hiding (`isHidden`) the view that is first responder moves first responder away; fade it
   via layer opacity instead.
 - `NSGraphicsContext(bitmapImageRep:)` of a 2x rep is already in points — don't scale again.
+- SwiftUI `layerEffect`: it may run per drawn item (light added once per item → boxes):
+  `.compositingGroup()` first; it skips transparent areas: give the view a 0.004-alpha base;
+  even with `isEnabled: false` it renders the view offscreen (text anti-aliased differently
+  from the plain view), so toggle `isEnabled`, don't add/remove the modifier.
+- Synthetic `mouseMoved` events sent to the panel don't drive SwiftUI's
+  `onHover`/`onContinuousHover` (they follow the real cursor); clicks do work.
 - A `WKWebView` added to a zero-sized superview with autoresizing grows by the superview's
   whole size when that gets its frame (the page showed 2× and cut off): set its frame outright.
 - `cacheDisplay` over a view containing a `WKWebView` makes WebKit render synchronously

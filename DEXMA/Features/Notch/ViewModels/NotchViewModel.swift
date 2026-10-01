@@ -85,6 +85,9 @@ final class NotchViewModel: SwipeTarget {
     /// The liquid effect's per-frame state; the content view renders it.
     var effects: MotionEffects { motion.effects }
 
+    /// The band's liquid controls and selection indicator; the band's views render them.
+    var band: BandMotion { motion.band }
+
     // MARK: Presentation
 
     /// The silhouette as drawn this frame: squashed and stretched by the liquid effect
@@ -152,6 +155,7 @@ final class NotchViewModel: SwipeTarget {
         if progress != 0 { motion.begin() }
         if state != .closed {
             if state == .open, tab == .search { search.session.rememberFocus(in: panel) }
+            band.releaseAll()
             state = .closed
             // Click-through from the moment it starts closing, not when the animation ends.
             panel.ignoresMouseEvents = true
@@ -290,11 +294,18 @@ final class NotchViewModel: SwipeTarget {
         guard newTab != tab else { return }
         let old = selectedView
         tab = newTab
+        band.select(PanelTab.allCases.firstIndex(of: newTab) ?? 0)
         if progress > 0 || state != .closed { selectedView.isHidden = false }
         if state == .open { focusSelectedTab() }
         // After focus moved: hiding the first responder would send it elsewhere.
         old.isHidden = true
         motion.setContent(newTab == .terminal ? session : search.session)
+    }
+
+    /// A click on one of the band's controls: a light tick, then its action.
+    func click(_ action: () -> Void) {
+        Haptics.tap()
+        action()
     }
 
     /// The selected tab's AppKit view (terminal container or Search card).

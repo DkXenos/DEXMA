@@ -8,6 +8,8 @@ import AppKit
 final class LiquidMotionEngine {
     /// The effect's per-frame state; the motion layer renders it.
     let effects = MotionEffects()
+    /// The band's controls under the pointer and its selection indicator, on the same frames.
+    let band = BandMotion()
     /// Bends the real screen around the silhouette while it moves and near the pointer.
     var bender: ScreenBender? {
         didSet {
@@ -20,6 +22,7 @@ final class LiquidMotionEngine {
         didSet {
             effects.tuning = EffectTuning.full.scaled(by: intensity)
             bender?.tuning = effects.tuning
+            band.tuning = effects.tuning
         }
     }
 
@@ -38,6 +41,7 @@ final class LiquidMotionEngine {
         self.content = content
         self.driver = driver
         content.onSnapshotRefreshed = { [weak self] in self?.snapshotRefreshed() }
+        band.wake = { [weak driver] in driver?.wake() }
     }
 
     /// Another tab was selected. Mid-motion its picture takes over right away (a quick capture
@@ -83,7 +87,7 @@ final class LiquidMotionEngine {
 
     /// One display frame, after the spring has stepped. `isOpen`: where the panel is headed,
     /// for when the motion ends this frame. Returns true while frames are still needed with
-    /// the spring at rest (the effect ringing out, or the pointer lens).
+    /// the spring at rest (the effect ringing out, the pointer lens, or the band's controls).
     func step(dt: CFTimeInterval, progress: CGFloat, geometry: NotchGeometry, isOpen: Bool) -> Bool {
         var moving = false
         if effects.isActive {
@@ -93,7 +97,8 @@ final class LiquidMotionEngine {
             }
         }
         let pointerBusy = bender?.step(dt: dt, motion: motion(progress: progress, geometry: geometry)) ?? false
-        return moving || pointerBusy
+        let bandBusy = band.step(dt: dt)
+        return moving || pointerBusy || bandBusy
     }
 
     /// The panel just reached open or closed at `velocity`: a squash that rings out.
@@ -123,7 +128,7 @@ final class LiquidMotionEngine {
     func warmUp() {
         guard !effects.isActive, !driver.isAnimating else { return }
         bender?.warmUp()
-        effects.begin(with: nil)
+        effects.beginWarmUp()
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in
             guard let self, self.effects.isActive, !self.driver.isAnimating, !self.driver.isHeld else { return }
             self.effects.end()

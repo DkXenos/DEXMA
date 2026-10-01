@@ -2,8 +2,9 @@
 #include <SwiftUI/SwiftUI_Metal.h>
 using namespace metal;
 
-// SwiftUI shaders for the notch's opening/closing motion (see LiquidMotionLayer.swift). They
-// bend the terminal *content* and add light; the black silhouette itself is an ordinary
+// SwiftUI shaders for the notch's opening/closing motion (see LiquidMotionLayer.swift) and,
+// at the end, the band's controls under the pointer. They bend the *content* (terminal,
+// Search card, a control's label) and add light; the black silhouette itself is an ordinary
 // vector shape underneath, squashed and stretched through its own width and height.
 // Coordinates are the panel's, in points, y down; the notch body hangs from y = 0.
 // With every effect parameter at 0 both functions are exact identities.
@@ -102,4 +103,78 @@ static float gaussian(float x, float width) {
 // params: centre x, horizontal scale, vertical scale, unused.
 [[ stitchable ]] float2 liquidStretch(float2 position, float4 params) {
     return float2(params.x + (position.x - params.x) / params.y, position.y / params.z);
+}
+
+// Signed distance to a rounded rectangle (negative inside) and the outward normal.
+// rect: x, y, width, height; r: corner radius (height / 2 makes a capsule).
+static float roundedRectDistance(float2 p, float4 rect, float r, thread float2 &normal) {
+    float2 centre = rect.xy + rect.zw * 0.5;
+    float2 d = p - centre;
+    float2 q = abs(d) - (rect.zw * 0.5 - r);
+    float2 side = float2(d.x < 0.0 ? -1.0 : 1.0, d.y < 0.0 ? -1.0 : 1.0);
+    if (q.x > 0.0 && q.y > 0.0) {  // Around a corner.
+        float len = max(length(q), 1e-4);
+        normal = side * q / len;
+        return len - r;
+    }
+    normal = q.x > q.y ? float2(side.x, 0.0) : float2(0.0, side.y);
+    return max(q.x, q.y) - r;
+}
+
+// The band's liquid controls (tab segments, Search buttons; see BandControl.swift): the same
+// glass as the notch's rim, on a small capsule, plus a magnifier and a glint that follow the
+// pointer. Applied to the control padded by a transparent margin, so the bulge and the light
+// can spill just past its edge; every sample stays within `margin` of its pixel (the effect's
+// maxSampleOffset). With every parameter at 0 it is an exact identity.
+// control: x, y, width, height of the control inside the margin.
+// lens: pointer x, y, lens radius, magnification at its centre.
+// fx: rim refraction (pt), aberration (pt), light opacity, bulge (fraction).
+// extra: margin (pt), unused × 3.
+[[ stitchable ]] half4 liquidControlLens(float2 position, SwiftUI::Layer layer,
+                                         float4 control, float4 lens, float4 fx, float4 extra) {
+    float2 centre = control.xy + control.zw * 0.5;
+    float radius = control.w * 0.5;
+    // Bulge: the control swells about its centre, so content comes from nearer the centre.
+    float2 p = centre + (position - centre) / (1.0 + fx.w);
+    // Magnifier around the pointer: strongest at its centre, easing to nothing at its radius.
+    float2 toLens = p - lens.xy;
+    float k = saturate(1.0 - dot(toLens, toLens) / max(lens.z * lens.z, 1.0));
+    p -= toLens * (lens.w * k * k);
+
+    // Rim: as through the edge of a glass lens, content near the (swollen) edge is pulled in.
+    float2 normal;
+    float inside = -roundedRectDistance(centre + (position - centre) / (1.0 + fx.w), control, radius, normal)
+                 * (1.0 + fx.w);
+    float edge = inside > 0.0 ? max(1.0 - inside / max(radius, 1.0), 0.0) : 0.0;
+    float2 source = p - normal * (fx.x * edge * edge);
+    float2 split = normal * (fx.y * edge);
+    // Never further than the margin (maxSampleOffset) from this pixel.
+    float reach = max(extra.x - 0.5, 0.0);
+    float2 offset = source - position;
+    float len = length(offset) + length(split);
+    if (len > reach) {
+        float scale = reach / len;
+        offset *= scale;
+        split *= scale;
+    }
+    source = position + offset;
+
+    half4 color = layer.sample(source);
+    if (fx.y > 0.0) {
+        half4 red = layer.sample(source + split);
+        half4 blue = layer.sample(source - split);
+        color = half4(red.r, color.g, blue.b, max(color.a, max(red.a, blue.a)));
+    }
+
+    // Light on the glass, inside the control only: a soft glint around the pointer and a thin
+    // specular line along the rim, brightest near the pointer.
+    float2 toPointer = position - lens.xy;
+    float near = exp(-length(toPointer) / max(lens.z, 1.0));
+    float glint = exp(-dot(toPointer, toPointer) / max(0.25 * lens.z * lens.z, 1.0));
+    float rimLine = gaussian(inside - 1.0, 0.9) * (0.35 + 0.65 * near);
+    float coverage = clamp(inside + 0.5, 0.0, 1.0);
+    float light = (0.45 * glint + rimLine) * fx.z * coverage;
+    color.rgb += half3(light * float3(0.94, 0.97, 1.0));
+    color.a = max(color.a, half(light));
+    return color;
 }

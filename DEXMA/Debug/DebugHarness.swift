@@ -2,8 +2,8 @@
 import AppKit
 
 /// Debug-only launch arguments that check the running app, print what they find and quit:
-/// `-selftest`, `-snapshot <dir>`, `-effecttest <dir>`, `-tabtest <dir>`, `-warptest <dir>`,
-/// `-captureidle <s>`.
+/// `-selftest`, `-snapshot <dir>`, `-effecttest <dir>`, `-tabtest <dir>`, `-hovertest <dir>`,
+/// `-warptest <dir>`, `-captureidle <s>`.
 enum DebugHarness {
     static func runIfRequested(coordinator: AppCoordinator, panel: NotchPanel, notch: NotchViewModel,
                                session: ShellSession) {
@@ -19,6 +19,10 @@ enum DebugHarness {
             WarpTest.keepCapturing(notch: notch, seconds: Double(seconds) ?? 20)
         } else if let dir = value(after: "-warptest") {
             WarpTest.run(panel: panel, notch: notch, dir: URL(fileURLWithPath: dir))
+        } else if let dir = value(after: "-bandshot") {
+            HoverTest.shot(panel: panel, notch: notch, dir: URL(fileURLWithPath: dir))
+        } else if let dir = value(after: "-hovertest") {
+            HoverTest.run(panel: panel, notch: notch, session: session, dir: URL(fileURLWithPath: dir))
         } else if let dir = value(after: "-tabtest") {
             TabTest.run(panel: panel, notch: notch, session: session, dir: URL(fileURLWithPath: dir))
         } else if let dir = value(after: "-effecttest") {

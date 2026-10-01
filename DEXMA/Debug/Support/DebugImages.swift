@@ -66,6 +66,23 @@ enum DebugImages {
         return (differing, maxDiff, differing == 0 ? "" : "x \(box.minX)…\(box.maxX) y \(box.minY)…\(box.maxY)")
     }
 
+    /// The box (in pixels) around every pixel that differs by more than 2/255 in any channel,
+    /// nil if none do or the sizes don't match.
+    static func differenceBox(_ a: CGImage, _ b: CGImage) -> CGRect? {
+        guard a.width == b.width, a.height == b.height else { return nil }
+        let pa = rgba(a), pb = rgba(b)
+        var box = (minX: Int.max, minY: Int.max, maxX: -1, maxY: -1)
+        for i in stride(from: 0, to: pa.count, by: 4) {
+            var d = 0
+            for c in 0..<4 { d = max(d, abs(Int(pa[i + c]) - Int(pb[i + c]))) }
+            guard d > 2 else { continue }
+            let x = (i / 4) % a.width, y = (i / 4) / a.width
+            box = (min(box.minX, x), min(box.minY, y), max(box.maxX, x), max(box.maxY, y))
+        }
+        guard box.maxX >= 0 else { return nil }
+        return CGRect(x: box.minX, y: box.minY, width: box.maxX - box.minX, height: box.maxY - box.minY)
+    }
+
     /// Writes `<dir>/<name>.png`.
     static func write(_ image: CGImage, _ dir: URL, _ name: String) {
         try? NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:])?

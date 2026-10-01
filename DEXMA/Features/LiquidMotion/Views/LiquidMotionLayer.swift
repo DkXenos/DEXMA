@@ -38,6 +38,14 @@ struct LiquidMotionLayer: View {
                     .offset(x: contentFrame.minX, y: contentFrame.minY)
                     .opacity(contentOpacity)
             }
+            if effects.isWarmUp {
+                // The band controls' shader, rendered once at launch (identity: all zero) on
+                // the closed notch's black, where this alpha changes no pixel.
+                Color.black.opacity(0.004)
+                    .frame(width: 16, height: 16)
+                    .layerEffect(ControlLensEffect.shader(.zero), maxSampleOffset: ControlLensEffect.reach)
+                    .offset(x: shape.centerX - 8, y: 4)
+            }
         }
         .frame(width: panelSize.width, height: panelSize.height, alignment: .topLeading)
         .distortionEffect(
@@ -60,14 +68,16 @@ struct LiquidMotionLayer: View {
         .allowsHitTesting(false)
     }
 
-    /// Compiles both shaders ahead of time (macOS 15+). `NotchViewModel.warmUpEffects` also
-    /// renders the layer once at launch, which is what warms them on macOS 14.
+    /// Compiles the shaders ahead of time (macOS 15+), the band controls' one too.
+    /// `NotchViewModel.warmUpEffects` also renders the layer once at launch (with the controls'
+    /// shader), which is what warms them on macOS 14.
     static func precompile() {
         guard #available(macOS 15, *) else { return }
         Task {
             try? await ShaderLibrary.liquidLens(.float4(0, 0, 0, 0), .float4(0, 0, 0, 0), .float4(0, 0, 0, 0))
                 .compile(as: .layerEffect)
             try? await ShaderLibrary.liquidStretch(.float4(0, 1, 1, 0)).compile(as: .distortionEffect)
+            try? await ControlLensEffect.shader(.zero).compile(as: .layerEffect)
         }
     }
 

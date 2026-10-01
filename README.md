@@ -15,6 +15,9 @@ app you were using. When closed, DEXMA is invisible.
   field from anywhere in the panel. Right of the notch are back, forward, reload and open in
   your browser (<kbd>⌘</kbd><kbd>[</kbd>, <kbd>⌘</kbd><kbd>]</kbd>, <kbd>⌘</kbd><kbd>R</kbd>).
   The page stays loaded while the panel is closed. Nothing is loaded until your first search.
+  Under the pointer, each tab and button turns into a small drop of liquid glass: it swells
+  for a moment, then a gentle lens and highlight follow the pointer; it squashes when you
+  press it (with a light tick), and the selection slides between tabs like a droplet.
 - **Gesture or shortcut:** a two-finger swipe from the top edge of the trackpad, or
   <kbd>⌥</kbd><kbd>`</kbd> from anywhere (you can change the shortcut). Hovering over the
   notch makes it swell slightly; click to open.
@@ -32,7 +35,8 @@ app you were using. When closed, DEXMA is invisible.
   the notch moves; at
   rest nothing changes and text stays crisp. The swipe gives Force Touch ticks when it passes
   the point of no return and when it lands. Set the strength in
-  *Settings → Animation → Effect intensity*; Off, or Reduce Motion, turns the lens effect off.
+  *Settings → Animation → Effect intensity* (it scales the tabs' and buttons' glass too); Off,
+  or Reduce Motion, turns the lens effect off.
 
 ## Requirements
 
