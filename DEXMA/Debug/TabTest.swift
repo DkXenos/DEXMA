@@ -21,7 +21,8 @@ enum TabTest {
             capture(panel, dir, "terminal-open")
 
             press("2", panel)
-            try? await Task.sleep(for: .seconds(1))  // The indicator has settled.
+            try? await Task.sleep(for: .seconds(1))  // The slide has settled.
+            while notch.debugTabDriver.isAnimating { try? await Task.sleep(for: .milliseconds(20)) }
             report("⌘2 → Search tab, field focused", ok: notch.tab == .search && session.container.isHidden
                    && !search.card.isHidden && fieldFocused(search, panel), panel, notch)
             capture(panel, dir, "search-empty")
@@ -182,6 +183,10 @@ enum TabTest {
         notch.debugBeginMotion()
         try? await Task.sleep(for: .milliseconds(150))
         guard let motion = DebugImages.window(panel) else { return }
+        if let snapshot = notch.effects.snapshot {
+            DebugImages.write(snapshot.image, dir, "rest-\(label.replacingOccurrences(of: " ", with: "-"))-snapshot")
+            print("[tabs]   snapshot \(snapshot.image.width)x\(snapshot.image.height) @\(snapshot.scale) origin \(snapshot.origin)")
+        }
         notch.debugEndMotion()
         try? await Task.sleep(for: .milliseconds(150))
         let name = label.replacingOccurrences(of: " ", with: "-")

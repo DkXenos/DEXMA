@@ -41,7 +41,11 @@ enum EffectTest {
         session.restartCaretBlink()  // Caret at full opacity, as snapshots draw it.
         guard let truth = DebugImages.window(panel) else { return print("[effect] window capture failed") }
         let scale = panel.backingScaleFactor
-        let frame = notch.geometry.contentFrame
+        // The terminal sits padded inside the card.
+        let card = notch.geometry.contentFrame
+        let inset = session.container.terminalOrigin
+        let frame = CGRect(x: card.minX + inset.x, y: card.minY + inset.y,
+                           width: session.terminalView.bounds.width, height: session.terminalView.bounds.height)
         let crop = CGRect(x: frame.minX * scale, y: frame.minY * scale,
                           width: frame.width * scale, height: frame.height * scale)
         var times: [Double] = []

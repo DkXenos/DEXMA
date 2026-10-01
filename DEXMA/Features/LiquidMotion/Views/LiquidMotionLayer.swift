@@ -1,14 +1,14 @@
 import SwiftUI
 
-/// The panel's SwiftUI chrome (band, card stroke, page dots) always, and while the panel
-/// moves the content (terminal or web page) as a snapshot in place of the live view, all of it
-/// stretched with the silhouette and bent by the lens shader (LiquidEffects.metal), plus the
-/// light on the rim. It sits over the black silhouette, which stays an ordinary vector shape
-/// throughout (squashed and stretched through its own size), so nothing but the content is
-/// ever swapped; the chrome is the same views moving or not.
+/// The panel while it moves: a snapshot of the content (terminal or web page) in place of the
+/// live view, and a copy of the chrome (band, card stroke, page dots), both stretched with the
+/// silhouette and bent by the lens shader (LiquidEffects.metal), plus the light on the rim. It
+/// sits over the black silhouette, which stays an ordinary vector shape throughout (squashed
+/// and stretched through its own size).
 ///
-/// At rest both shaders are disabled (never run) and the snapshot is gone: the live content
-/// shows under the chrome.
+/// Only on screen while `effects.isActive`: at rest its shaders are off and it's hidden (a layer
+/// opacity, so the live content and the live chrome take over in exactly the same frame; the
+/// one transitional frame SwiftUI draws as the shaders switch is never seen).
 struct LiquidMotionLayer<Chrome: View>: View {
     let effects: MotionEffects
     /// The silhouette as drawn this frame, already scaled by `scale`.
@@ -19,35 +19,28 @@ struct LiquidMotionLayer<Chrome: View>: View {
     let panelSize: CGSize
     let contentFrame: CGRect
     let contentOpacity: CGFloat
-    /// Whether the chrome takes clicks (the panel is open).
-    let chromeInteractive: Bool
+    /// The chrome's copy for the motion (the live one is outside, see `NotchContentView`).
     @ViewBuilder let chrome: Chrome
 
     var body: some View {
         let active = effects.isActive
-        let energy = effects.frame.energy
-        let tuning = effects.tuning
-        let p = min(max(progress, 0), 1)
-        // Lens and light peak mid-way and scale with speed; all zero at rest (energy = 0).
-        let midway = sin(.pi * p)
-        let radius = shape.drawnBottomRadius
-
         ZStack(alignment: .topLeading) {
             // SwiftUI skips a layer effect whose content is all transparent (before the text
-            // fades in, or with no snapshot yet), and the light must still be drawn. Black at
-            // this alpha over the black silhouette changes no pixel.
-            Color.black.opacity(active ? 0.004 : 0)
-                .allowsHitTesting(false)
-            if active, let snapshot = effects.snapshot {
+            // fades in), and the light must still be drawn. Black at this alpha over the black
+            // silhouette changes no pixel.
+            Color.black.opacity(0.004)
+            if let snapshot = effects.snapshot {
                 Image(decorative: snapshot.image, scale: snapshot.scale)
                     .frame(width: snapshot.size.width, height: snapshot.size.height)
-                    .offset(x: contentFrame.minX + snapshot.origin.x, y: contentFrame.minY + snapshot.origin.y)
+                    .offset(x: snapshot.origin.x, y: snapshot.origin.y)
+                    // The card's corners, as the live pages are clipped (ContentPagerView).
+                    .frame(width: contentFrame.width, height: contentFrame.height, alignment: .topLeading)
+                    .clipShape(RoundedRectangle(cornerRadius: NotchGeometry.cardRadius, style: .continuous))
+                    .offset(x: contentFrame.minX, y: contentFrame.minY)
                     .opacity(contentOpacity)
-                    .allowsHitTesting(false)
             }
             chrome
                 .opacity(contentOpacity)
-                .allowsHitTesting(chromeInteractive)
             if effects.isWarmUp {
                 // The band controls' shader, rendered once at launch (identity: all zero) on
                 // the closed notch's black, where this alpha changes no pixel.
@@ -57,23 +50,25 @@ struct LiquidMotionLayer<Chrome: View>: View {
                     .offset(x: shape.centerX - 8, y: 4)
             }
         }
-        .frame(width: panelSize.width, height: panelSize.height, alignment: .topLeading)
-        .distortionEffect(
-            ShaderLibrary.liquidStretch(.float4(shape.centerX, scale.width, scale.height, 0)),
-            maxSampleOffset: Self.stretchReach,
-            isEnabled: active)
-        .layerEffect(
-            ShaderLibrary.liquidLens(
-                .float4(shape.centerX, shape.width, shape.height, radius),
-                .float4(tuning.refraction * energy * (0.35 + 0.65 * midway),
-                        tuning.aberration * energy,
-                        tuning.highlight * energy * (0.3 + 0.7 * midway),
-                        tuning.glow * energy * midway),
-                .float4(p, tuning.highlightWidth, tuning.rimWidth, 0)),
-            maxSampleOffset: Self.lensReach(tuning),
-            isEnabled: active)
-        // Like the live content's mask: nothing shows outside the silhouette.
-        .clipShape(shape)
+        .modifier(liquid(enabled: active))
+        .opacity(active ? 1 : 0)
+        .allowsHitTesting(false)
+    }
+
+    /// The stretch and the lens for this frame (all zero at rest), clipped to the silhouette.
+    private func liquid(enabled: Bool) -> LiquidEffect {
+        let energy = effects.frame.energy
+        let tuning = effects.tuning
+        let p = min(max(progress, 0), 1)
+        // Lens and light peak mid-way and scale with speed; all zero at rest (energy = 0).
+        let midway = sin(.pi * p)
+        return LiquidEffect(
+            panelSize: panelSize, shape: shape, scale: scale,
+            fx: SIMD4(tuning.refraction * energy * (0.35 + 0.65 * midway), tuning.aberration * energy,
+                      tuning.highlight * energy * (0.3 + 0.7 * midway),
+                      tuning.glow * energy * midway),
+            light: SIMD4(p, tuning.highlightWidth, tuning.rimWidth, 0),
+            reach: Self.lensReach(tuning), enabled: enabled)
     }
 
     /// Compiles the shaders ahead of time (macOS 15+), the band controls' one too.
@@ -97,5 +92,33 @@ struct LiquidMotionLayer<Chrome: View>: View {
 
     /// The stretch moves content by at most the panel's transparent margin around the
     /// expanded shape (`MotionEffects.Frame.scale` clamps it to that).
-    private static var stretchReach: CGSize { CGSize(width: NotchGeometry.margin, height: NotchGeometry.margin) }
+    static var stretchReach: CGSize { CGSize(width: NotchGeometry.margin, height: NotchGeometry.margin) }
+}
+
+/// LiquidEffects.metal's stretch and lens on a panel-sized layer, clipped to the silhouette.
+private struct LiquidEffect: ViewModifier {
+    let panelSize: CGSize
+    let shape: NotchShape
+    let scale: CGSize
+    let fx: SIMD4<Double>
+    let light: SIMD4<Double>
+    let reach: CGSize
+    let enabled: Bool
+
+    func body(content: Content) -> some View {
+        content
+            .frame(width: panelSize.width, height: panelSize.height, alignment: .topLeading)
+            .distortionEffect(
+                ShaderLibrary.liquidStretch(.float4(shape.centerX, scale.width, scale.height, 0)),
+                maxSampleOffset: CGSize(width: NotchGeometry.margin, height: NotchGeometry.margin),
+                isEnabled: enabled)
+            .layerEffect(
+                ShaderLibrary.liquidLens(
+                    .float4(shape.centerX, shape.width, shape.height, shape.drawnBottomRadius),
+                    .float4(fx.x, fx.y, fx.z, fx.w),
+                    .float4(light.x, light.y, light.z, light.w)),
+                maxSampleOffset: reach, isEnabled: enabled)
+            // Like the live content's mask: nothing shows outside the silhouette.
+            .clipShape(shape)
+    }
 }

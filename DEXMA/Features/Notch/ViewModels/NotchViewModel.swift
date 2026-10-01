@@ -159,8 +159,9 @@ final class NotchViewModel: SwipeTarget, TabSwipeTarget {
 
     // MARK: Springs
 
+    /// The system's Reduce Motion (read through the band's model, the one place it's asked).
     private var reduceMotion: Bool {
-        NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        band.reduceMotion()
     }
 
     private var openSpring: Spring {
@@ -384,6 +385,7 @@ final class NotchViewModel: SwipeTarget, TabSwipeTarget {
     private func commit(_ newTab: PanelTab) {
         guard newTab != tab else { return }
         tab = newTab
+        pager.selectedIndex = index(of: newTab)
         hideURLField()
         if state == .open { focusSelectedTab() }
         motion.setContent(selectedContent)

@@ -87,7 +87,8 @@ Layers — keep them separated:
   `NSPanel` above the menu bar; `canJoinAllSpaces` + `fullScreenAuxiliary` + `stationary`;
   transparent; ordered in at launch, never ordered out. `PanelContentView` — the panel's
   flipped content view (warp/glass below, `NSHostingView` above). `NotchContentView` —
-  SwiftUI root, everything from the view model. `NotchChrome` (inside the motion layer):
+  SwiftUI root, everything from the view model. `NotchChrome` (live at rest, a copy in the
+  motion layer while moving):
   `TabSwitcher`, `BandContext`, `CardDecoration`, `PageDots`; every band control is a
   `BandButtonStyle`/`BandControl` (white 12 % hover fill, under the liquid lens while
   hovered/pressed); clicks go through `NotchViewModel.click` (haptic tick).
@@ -177,8 +178,13 @@ True black (#000000) throughout; the shape, size, notch geometry and open/close 
   JS after load and on theme change), #1C1C1E until known.
 - **Page dots:** in the 10 pt margin below the card, centred; 5 pt, white 25 %, 6 pt apart;
   the active one 14 × 5, white 85 %; position and width follow the progress (`PageDotsLayout`).
-- **Snapshot rule:** the chrome (band, card stroke, page dots) is inside the motion layer, so
-  the open/close distortion bends it; only the card's content is a picture.
+- **Snapshot rule:** while the panel moves, the motion layer shows the content's picture and a
+  copy of the chrome (band, card stroke, page dots), so the distortion bends both; at rest the
+  live chrome (outside every shader, flattened with `.compositingGroup()` so its text renders
+  like the copy) shows. Why this shape: toggling a SwiftUI layer effect on a visible layer
+  draws one frame of its content shifted (~100 × 52 pt here), and keeping the shaders always
+  on cost extra frames during hover and swipes — the motion layer is hidden (layer opacity)
+  whenever its shaders switch, so that frame is never seen.
 
 ## WebTab
 One component (`Features/WebTab/`), two configurations (`WebTabConfiguration`):
@@ -601,6 +607,10 @@ and never quits (wrap runs in a watchdog).
   from the plain view), so toggle `isEnabled`, don't add/remove the modifier.
 - Synthetic `mouseMoved` events sent to the panel don't drive SwiftUI's
   `onHover`/`onContinuousHover` (they follow the real cursor); clicks do work.
+- Toggling `isEnabled` of a `layerEffect`/`distortionEffect` on a visible layer draws one frame
+  of its content offset; only toggle while the layer is hidden (opacity 0).
+- WebKit stops painting while the screen is locked or asleep: debug captures of web pages
+  then show an empty card (check `CGSessionCopyCurrentDictionary` / `pmset -g log`).
 - A `layerEffect`/`distortionEffect` can't contain AppKit views (NSTextField, representables):
   the chrome's text field and the pulsing dot are AppKit overlays above the hosting view.
 - Synthetic scroll events need real timestamps (`CGEvent.timestamp`), or every speed is 0.

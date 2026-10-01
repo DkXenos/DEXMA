@@ -12,6 +12,11 @@ final class ContentPagerView: NSView {
     private(set) var pages: [NSView] = []
     private let maskLayer = CAShapeLayer()
     private(set) var progress: CGFloat = 0
+    /// The selected tab's page: always shown (with the panel), so it can take the keyboard
+    /// the moment it's selected, before it has slid in.
+    var selectedIndex = 0 {
+        didSet { if selectedIndex != oldValue { updateVisibility() } }
+    }
     /// False while the panel is fully closed: nothing shows.
     var isShowingPages = false {
         didSet { if isShowingPages != oldValue { updateVisibility() } }
@@ -21,6 +26,7 @@ final class ContentPagerView: NSView {
         super.init(frame: CGRect(origin: .zero, size: size))
         wantsLayer = true
         layer?.cornerRadius = cornerRadius
+        layer?.cornerCurve = .continuous  // Like the card's stroke (SwiftUI's .continuous).
         layer?.masksToBounds = true
         layer?.mask = maskLayer
     }
@@ -92,7 +98,7 @@ final class ContentPagerView: NSView {
 
     private func updateVisibility() {
         for (index, page) in pages.enumerated() {
-            let hidden = !isShowingPages || abs(CGFloat(index) - progress) >= 0.999
+            let hidden = !isShowingPages || (abs(CGFloat(index) - progress) >= 0.999 && index != selectedIndex)
             if page.isHidden != hidden { page.isHidden = hidden }
         }
     }
