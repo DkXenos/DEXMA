@@ -75,7 +75,7 @@ final class AppCoordinator: WindowRouter {
         LiquidMotionLayer.precompile()
         DispatchQueue.main.async { notch.warmUpEffects() }
         #if DEBUG
-        DebugSnapshot.runIfRequested(coordinator: self, panel: panel, controller: notch, session: session)
+        DebugHarness.runIfRequested(coordinator: self, panel: panel, notch: notch, session: session)
         #endif
     }
 
