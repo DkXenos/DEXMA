@@ -23,6 +23,8 @@ enum DebugHarness {
         } else if let dir = value(after: "-sizetest") {
             SizeTest.run(coordinator: coordinator, panel: panel, notch: notch, session: session,
                          dir: URL(fileURLWithPath: dir))
+        } else if let dir = value(after: "-captureorient") {
+            CaptureTest.orientation(panel: panel, notch: notch, dir: URL(fileURLWithPath: dir))
         } else if let dir = value(after: "-capturetest") {
             CaptureTest.run(panel: panel, notch: notch, dir: URL(fileURLWithPath: dir))
         } else if let dir = value(after: "-claudeprobe") {

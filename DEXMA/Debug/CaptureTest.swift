@@ -220,6 +220,53 @@ enum CaptureTest {
         }
     }
 
+    /// `-captureorient <dir>`: a short stroke near the top-left corner; is it drawn where the pointer
+    /// went (top-left), or mirrored?
+    static func orientation(panel: NotchPanel, notch: NotchViewModel, dir: URL) {
+        self.dir = dir
+        Task { @MainActor in
+            try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            guard let capture = notch.capture, let screen = panel.screen else { return finish(PasteboardSnapshot()) }
+            let frozen = syntheticFrozen(for: screen)
+            capture.debugBegin(on: screen, frozen: frozen, delay: 0.05)
+            try? await Task.sleep(for: .milliseconds(400))
+            let overlay = capture.debugPanel
+            let stroke = (0...100).map { CGPoint(x: 300 + CGFloat($0) * 3, y: 200 + CGFloat($0) * 0.5) }
+            send(.leftMouseDown, stroke[0], to: overlay)
+            for point in stroke.dropFirst() { send(.leftMouseDragged, point, to: overlay) }
+            try? await Task.sleep(for: .milliseconds(300))
+            if let image = DebugImages.window(overlay) {
+                DebugImages.write(image, dir, "orient")
+                let scale = CGFloat(image.width) / screen.frame.width
+                let at = pixel(image, at: CGPoint(x: 450 * scale, y: 225 * scale))
+                let mirrored = pixel(image, at: CGPoint(x: 450 * scale, y: (screen.frame.height - 225) * scale))
+                log("stroke where the pointer went (450, 225): \(at); mirrored (450, \(Int(screen.frame.height - 225))): \(mirrored) → \(min(at.r, at.g, at.b) > 200 ? "OK" : min(mirrored.r, mirrored.g, mirrored.b) > 200 ? "FLIPPED" : "neither")")
+            }
+            if let image = DebugImages.window(overlay) {
+                let scale = CGFloat(image.width) / screen.frame.width
+                let marker = pixel(image, at: CGPoint(x: 60 * scale, y: 60 * scale))
+                log("frozen picture upright (red marker top-left): \(marker) \(marker.r > 150 && marker.g < 60 ? "OK" : "FAIL")")
+            }
+            send(.leftMouseUp, stroke.last!, to: overlay)
+            let look = CaptureLook.full
+            try? await Task.sleep(for: .seconds(look.morph * 1.3))
+            if let image = DebugImages.window(overlay) {
+                DebugImages.write(image, dir, "orient-lift")
+                // Inside the selection, over the synthetic window (light) just below the stroke.
+                let scale = CGFloat(image.width) / screen.frame.width
+                let inside = pixel(image, at: CGPoint(x: 450 * scale, y: 254 * scale))
+                let outside = pixel(image, at: CGPoint(x: 450 * scale, y: 300 * scale))
+                log("lifted selection shows the window, undimmed \(inside); window outside it, dimmed \(outside) → \(inside.r > outside.r + 40 ? "OK" : "FAIL")")
+            }
+            try? await Task.sleep(for: .seconds(look.hold + look.flight * 0.6))
+            if let image = DebugImages.window(overlay) { DebugImages.write(image, dir, "orient-flight") }
+            try? await Task.sleep(for: .seconds(2))
+            notch.close()
+            _ = await notch.waitForRest()
+            finish(PasteboardSnapshot())
+        }
+    }
+
     // MARK: Steps
 
     /// Capture mode with the synthetic picture, `points` drawn (a click if they're close), released.

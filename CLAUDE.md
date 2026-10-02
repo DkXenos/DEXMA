@@ -164,7 +164,7 @@ Layers — keep them separated:
 **Debug** (DEBUG only) — `DebugHarness` dispatches the launch flags to `SelfTest`
 (`-selftest`), `SnapshotTest` (`-snapshot <dir>`), `EffectTest` (`-effecttest <dir>`),
 `TabTest` (`-tabtest`), `SwipeTest` (`-swipetest`), `HoverTest` (`-hovertest`, `-bandshot`),
-`ClaudeProbe` (`-claudeprobe`), `CaptureTest` (`-capturetest`), `SizeTest` (`-sizetest`) and `WarpTest` (`-warptest <dir>`, `-captureidle <s>`); `Support/` holds `DebugImages`,
+`ClaudeProbe` (`-claudeprobe`), `CaptureTest` (`-capturetest`, `-captureorient`), `SizeTest` (`-sizetest`) and `WarpTest` (`-warptest <dir>`, `-captureidle <s>`); `Support/` holds `DebugImages`,
 `FramePacingProbe` and `NotchViewModel.waitForRest()` (see *Debug snapshots*).
 
 ## Tab UI (the spec, 2026-10-01, branch `feature/claude-tab`)
@@ -730,6 +730,10 @@ and never quits (wrap runs in a watchdog).
   becoming key; keep it off the open path when the page had the keyboard.
 - SwiftUI shaders: `layerEffect`/`distortionEffect` exist on macOS 14; `Shader.compile(as:)`
   is macOS 15+ (on 14, render the effect once at launch to warm it).
+- A layer-hosting view's layer gets its geometry flip from the view's `isFlipped`: setting
+  `isGeometryFlipped` on that layer is overridden. The capture canvas is a flipped view
+  (`CaptureCanvasView`); before, strokes drew mirrored top to bottom (`-captureorient` checks).
+  Test with strokes that aren't symmetric about the screen's centre.
 - KVC/`CAAnimation` values of `CATransform3D` must be `NSValue(caTransform3D:)`.
 - A `CABasicAnimation` with only `toValue`, added right after setting the model value, jumps:
   give it `fromValue`.

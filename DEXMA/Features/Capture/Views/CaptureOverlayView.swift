@@ -14,7 +14,7 @@ final class CaptureOverlayView: NSView {
     /// Strokes are taken (off once one has ended, until the next capture).
     var acceptsStrokes = false
 
-    private let canvas = NSView()
+    private let canvas = CaptureCanvasView()
     private let root = CALayer()
     private let frozen = CALayer()
     private let dim = CALayer()
@@ -31,10 +31,10 @@ final class CaptureOverlayView: NSView {
     override init(frame: NSRect) {
         super.init(frame: frame)
         wantsLayer = true
-        // Layer-hosting: these layers are ours alone, laid out top-left like the view.
+        // Layer-hosting: these layers are ours alone, laid out top-left like the view (the canvas
+        // is flipped).
         canvas.layer = root
         canvas.wantsLayer = true
-        root.isGeometryFlipped = true
         frozen.contentsGravity = .resize
         dim.backgroundColor = CGColor(gray: 0, alpha: 1)
         liftImage.masksToBounds = true
