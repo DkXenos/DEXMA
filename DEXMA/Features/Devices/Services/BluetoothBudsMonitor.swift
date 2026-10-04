@@ -36,10 +36,13 @@ final class BluetoothBudsMonitor: NSObject {
         isRunning = true
         connectNotification = IOBluetoothDevice.register(forConnectNotifications: self,
                                                          selector: #selector(deviceConnected(_:device:)))
-        // Connected before launch: the notification only reports new connections. (A local
-        // list: no radio traffic.)
-        for case let device as IOBluetoothDevice in IOBluetoothDevice.pairedDevices() ?? [] where device.isConnected() {
-            handleConnected(device)
+        // Connected before launch: the notification only reports new connections. A link
+        // macOS's audio owns reads as "not connected" here, so its audio route counts too.
+        // (Local lists: no radio traffic.)
+        let audio = BluetoothAudioRoutes.connectedAddresses()
+        for case let device as IOBluetoothDevice in IOBluetoothDevice.pairedDevices() ?? [] {
+            let routed = device.addressString.map { audio.contains(SystemBatteryReader.normalized($0)) } ?? false
+            if device.isConnected() || routed { handleConnected(device) }
         }
     }
 

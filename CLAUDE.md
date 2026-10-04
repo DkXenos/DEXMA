@@ -342,8 +342,13 @@ cached records first, else one `performSDPQuery` → `BudsIdentification` (model
 Samsung service + name, name) → RFCOMM channel from the record (never hard-coded) →
 `BudsFrameDecoder` (chunked, resyncs on bad SOM/size/CRC/EOM, skips fragments) →
 `BudsStatusParser` (levels outside 1…100 or a disconnected bud = unknown) → `DeviceStore`.
-Each step logs (category "Buds"); if the device isn't connected yet when the notification
-comes, it looks again every 1 s, 5 times.
+Each step logs (category "Buds"), including the first raw bytes and the first reading.
+The Buds' link is owned by macOS's audio: inside DEXMA `isConnected()` stays false (the
+second hardware bug: DEXMA waited for it and gave up), so after the connect notification it
+attaches with `openConnection(self)` (joins the existing link; "connection exists" also comes
+back as an error, so it carries on either way) before SDP/RFCOMM. The notifications are the
+truth for connected/disconnected; at launch, Buds already connected are found through their
+Bluetooth audio route (`BluetoothAudioRoutes`: CoreAudio device UIDs carry the address).
 Non-Buds headsets are left alone for the session. Failure (busy channel, no service, timeout)
 → `SystemBatteryReader` (HID `BatteryPercent` in the IORegistry, then `system_profiler -json
 SPBluetoothDataType` `device_batteryLevel*`, off main) and retries after 2/10/60 s, then not
@@ -889,6 +894,8 @@ and never quits (wrap runs in a watchdog).
 - `CGWindowListCopyWindowInfo` lists front to back; names need Screen Recording, bounds don't.
 - `NSApp.currentSystemPresentationOptions` doesn't report another app's full screen (0 while
   the user was in full-screen spaces); the CGS managed-spaces `type` (4) does.
+- IOBluetooth: `isConnected()` is false in DEXMA for a device connected by macOS (audio) until
+  this process `openConnection`s it — never gate on it after a connect notification.
 - IOBluetooth: a renamed headset has no cached SDP records until something queries it; query
   with `performSDPQuery(_:)` (the UUID variant returns nothing); `IOBluetoothRFCOMMChannel`'s
   close is `close()` in Swift. Delegate callbacks are `nonisolated` here, hopping to main.

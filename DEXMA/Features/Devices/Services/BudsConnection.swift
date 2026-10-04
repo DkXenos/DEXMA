@@ -19,8 +19,7 @@ final class BudsConnection: NSObject, IOBluetoothRFCOMMChannelDelegate {
     private static let openTimeout: TimeInterval = 10
     /// The channel is open but nothing came: show macOS's level meanwhile.
     private static let firstStatusTimeout: TimeInterval = 5
-    /// The connect notification can come a moment before the device reports itself connected.
-    private static let notConnectedRetries = 5
+    private static let attachTimeout: TimeInterval = 10
 
     let device: IOBluetoothDevice
     let id: String
@@ -41,7 +40,10 @@ final class BudsConnection: NSObject, IOBluetoothRFCOMMChannelDelegate {
     private var sdpPending = false
     /// A status message from the Buds arrived (the fallback is no longer needed).
     private var hasStatus = false
-    private var notConnectedChecks = 0
+    /// This process has its own handle on the Buds' link (see `connect`).
+    private var attached = false
+    private var attachPending = false
+    private var bytesReceived = 0
 
     /// `model`: already known from the name or cached records (nil: the query decides).
     init(device: IOBluetoothDevice, id: String, model: BudsModel?) {
@@ -68,16 +70,11 @@ final class BudsConnection: NSObject, IOBluetoothRFCOMMChannelDelegate {
 
     private func connect(usingCache: Bool) {
         guard !stopped else { return }
-        guard device.isConnected() else {
-            // Not up yet (or gone again): look again shortly, a few times.
-            guard notConnectedChecks < Self.notConnectedRetries else {
-                Self.logger.notice("Device never reported itself connected; waiting for the next connect")
-                return
-            }
-            notConnectedChecks += 1
-            let work = DispatchWorkItem { [weak self] in self?.connect(usingCache: usingCache) }
-            retry = work
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1, execute: work)
+        // The Buds' link belongs to macOS (audio): this process's device object says "not
+        // connected" until it attaches to it. Only ever done after the connect notification,
+        // so it joins the existing link (it never calls the Buds up).
+        guard attached || device.isConnected() else {
+            attach(thenUsingCache: usingCache)
             return
         }
         if usingCache, let model, let channelID = SDPRecords.rfcommChannel(of: device, service: model.serviceUUID) {
@@ -85,6 +82,37 @@ final class BudsConnection: NSObject, IOBluetoothRFCOMMChannelDelegate {
         } else {
             querySDP()
         }
+    }
+
+    private func attach(thenUsingCache usingCache: Bool) {
+        guard !attachPending else { return }
+        attachPending = true
+        Self.logger.notice("Attaching to the Buds' connection")
+        let status = device.openConnection(self)
+        guard status == kIOReturnSuccess else {
+            attachPending = false
+            fail("Couldn't attach to the Buds' connection (\(Self.describe(status)))")
+            return
+        }
+        arm(Self.attachTimeout) { [weak self] in
+            guard let self, self.attachPending else { return }
+            self.attachPending = false
+            self.fail("Attaching to the Buds' connection timed out")
+        }
+        pendingUsesCache = usingCache
+    }
+
+    private var pendingUsesCache = true
+
+    private func attachCompleted(status: IOReturn) {
+        guard attachPending, !stopped else { return }
+        attachPending = false
+        timeout?.cancel()
+        // "Connection exists" comes back as an error too: carry on either way; opening the
+        // channel is what decides.
+        attached = true
+        Self.logger.notice("Attached (\(Self.describe(status), privacy: .public)); connected \(self.device.isConnected())")
+        connect(usingCache: pendingUsesCache)
     }
 
     /// All services (a query for specific UUIDs silently returns nothing since macOS 13).
@@ -158,7 +186,7 @@ final class BudsConnection: NSObject, IOBluetoothRFCOMMChannelDelegate {
             return
         }
         timeout?.cancel()
-        Self.logger.notice("RFCOMM channel open; waiting for the Buds' status")
+        Self.logger.notice("RFCOMM channel open (\(Self.describe(status), privacy: .public)); waiting for the Buds' status")
         arm(Self.firstStatusTimeout) { [weak self] in
             guard let self, !self.hasStatus else { return }
             Self.logger.notice("No status yet: showing macOS's own level meanwhile")
@@ -171,11 +199,18 @@ final class BudsConnection: NSObject, IOBluetoothRFCOMMChannelDelegate {
         let rejectedBefore = decoder?.rejected ?? 0
         let messages = decoder?.feed(bytes) ?? []
         if let rejected = decoder?.rejected, rejected > rejectedBefore {
-            Self.logger.debug("Ignored malformed data (\(rejected) bad frames so far)")
+            Self.logger.notice("Ignored malformed data (\(rejected) bad frames so far)")
         }
+        // The first bytes and messages, for diagnosing a model whose stream looks different.
+        if bytesReceived < 256 {
+            let hex = bytes.prefix(48).map { String(format: "%02x", $0) }.joined(separator: " ")
+            Self.logger.notice("Received \(bytes.count) bytes: \(hex, privacy: .public); messages \(messages.map { String(format: "0x%02x/%d", $0.id, $0.payload.count) }.joined(separator: " "), privacy: .public)")
+        }
+        bytesReceived += bytes.count
         for message in messages {
             guard let reading = BudsStatusParser.reading(from: message, model: model) else { continue }
             if !hasStatus {
+                Self.logger.notice("First battery reading: \(reading.components.map { "\($0.role.shortTitle) \($0.level.map(String.init) ?? "?")" }.joined(separator: ", "), privacy: .public)")
                 hasStatus = true
                 attempt = 0
                 timeout?.cancel()
@@ -186,8 +221,8 @@ final class BudsConnection: NSObject, IOBluetoothRFCOMMChannelDelegate {
 
     private func closed() {
         channel = nil
-        // Closing because the Buds disconnected: the monitor stops this next.
-        guard !stopped, device.isConnected() else { return }
+        guard !stopped else { return }
+        // If the Buds disconnected, the monitor's notification stops this before the retry.
         fail("RFCOMM channel closed by the device")
     }
 
@@ -197,10 +232,6 @@ final class BudsConnection: NSObject, IOBluetoothRFCOMMChannelDelegate {
     /// connect.
     private func fail(_ reason: String) {
         guard !stopped else { return }
-        guard device.isConnected() else {
-            Self.logger.notice("\(reason, privacy: .public) (device no longer connected)")
-            return
-        }
         timeout?.cancel()
         closeChannel()
         readFallback()
@@ -255,6 +286,10 @@ final class BudsConnection: NSObject, IOBluetoothRFCOMMChannelDelegate {
     }
 
     // MARK: IOBluetooth callbacks (the main run loop; hopped onto the main actor)
+
+    @objc nonisolated func connectionComplete(_ device: IOBluetoothDevice!, status: IOReturn) {
+        DispatchQueue.main.async { [weak self] in self?.attachCompleted(status: status) }
+    }
 
     @objc nonisolated func sdpQueryComplete(_ device: IOBluetoothDevice!, status: IOReturn) {
         DispatchQueue.main.async { [weak self] in self?.sdpCompleted(status: status) }

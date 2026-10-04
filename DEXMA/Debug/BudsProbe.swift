@@ -7,13 +7,14 @@ import IOBluetooth
 /// service's RFCOMM channel it would open, then quits.
 enum BudsProbe {
     static func run() {
+        print("[budsprobe] Bluetooth audio routes now: \(BluetoothAudioRoutes.connectedAddresses().sorted())")
         for case let device as IOBluetoothDevice in IOBluetoothDevice.pairedDevices() ?? [] {
             let name = device.name ?? "?"
             guard BudsIdentification.isCandidate(name: name, classOfDevice: device.classOfDevice) else { continue }
             let uuids = SDPRecords.serviceUUIDs(of: device)
             let model = BudsIdentification.model(name: name, serviceUUIDs: uuids)
             let channel = model.flatMap { SDPRecords.rfcommChannel(of: device, service: $0.serviceUUID) }
-            print("[budsprobe] \(name): connected \(device.isConnected()), \(uuids.count) cached service UUIDs → \(model?.displayName ?? "not Galaxy Buds / unknown"), status channel \(channel.map(String.init) ?? "-")")
+            print("[budsprobe] \(name): isConnected() \(device.isConnected()), \(uuids.count) cached service UUIDs → \(model?.displayName ?? "not Galaxy Buds / unknown"), status channel \(channel.map(String.init) ?? "-")")
             for uuid in uuids { print("[budsprobe]     \(uuid)") }
         }
         NSApp.terminate(nil)
