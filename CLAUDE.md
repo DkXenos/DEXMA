@@ -9,15 +9,18 @@ like a third-party app.
 - **Trigger:** two-finger swipe DOWN starting at the top edge of the trackpad (raw touches
   via OpenMultitouchSupport). The panel follows finger progress 1:1, then settles with a
   velocity-aware spring on release. Global hotkey (default ⌥`) is the fallback.
-- **Open:** the notch morphs into a wide panel with three tabs (an expanding pill left of the
-  notch, ⌘1/⌘2/⌘3, ⌃Tab, or a two-finger sideways swipe): **Terminal** — SwiftTerm
+- **Open:** the notch morphs into a wide panel with four tabs (an expanding pill left of the
+  notch, ⌘1…⌘4, ⌃Tab, or a two-finger sideways swipe): **Terminal** — SwiftTerm
   `LocalProcessTerminalView` running a persistent zsh, spawned at app launch and never killed
   when the panel closes — **Search** — a search field over a `WKWebView` (Google search, or
-  any address) — and **Claude** — claude.ai in a `WKWebView`. See *Tab UI* and *WebTab*.
+  any address) — **Claude** — claude.ai in a `WKWebView` — and **Devices** — the Galaxy
+  Buds' battery. See *Tab UI*, *WebTab* and *Devices*.
 - **Close:** swipe up, Esc, or hotkey. Focus returns to the previously active app.
 - **Draw to ask:** a Capture button at the right end of the band (every tab) or its own
   shortcut (default ⌥⇧`) freezes the display under the pointer; you draw around anything, and
   the crop flies into the notch and lands in claude.ai's message box. See *Capture*.
+- **Connect peek:** when the Buds connect, the closed notch grows into a Dynamic-Island pill
+  with their levels for ~3 s (click → Devices tab); red when a bud drops to 20 %/10 %.
 
 ## Architecture — feature-based MVVM
 Sources live in `DEXMA/`, a synchronized folder: adding, moving or renaming files needs no
@@ -69,15 +72,19 @@ Layers — keep them separated:
 - `Geometry/NotchGeometry` — notch rect from `NSScreen` (`auxiliaryTopLeftArea`/
   `auxiliaryTopRightArea`, `safeAreaInsets`); fallback pill for non-notch screens; the
   panel's window frame, the band's regions, the content card, the page dots, the hover zone
-  and `shape(at:)`. `NotchShape` — SwiftUI
+  and `shape(at:)` / `shape(at:activity:)` (with the connect peek's pill,
+  `NotchActivityShape`). `NotchShape` — SwiftUI
   `Shape` with animatable width/height/bottom radius/ear radius. `Interpolation` — `lerp`,
   `smoothstep`.
 - `Settings/` — `AppSettings` (@Observable, UserDefaults, `onChange` after every edit) with
   `KeyCombo` and `DisplayChoice`; `DefaultsMigration`.
-- `Permissions/` — `AccessibilityPermission`, `ScreenRecordingPermission`: live, polled only
-  while a window shows them.
+- `Permissions/` — `AccessibilityPermission`, `ScreenRecordingPermission`,
+  `BluetoothPermission` (`CBManager.authorization`, asks nothing): live, polled only while a
+  window shows them.
 - `Navigation/WindowRouter` — opens DEXMA's windows; `AppCoordinator` implements it.
-- `System/LoginItem` (SMAppService). `Extensions/` — `Logger(category:)`, `NSScreen.displayID`.
+- `System/LoginItem` (SMAppService), `System/FullScreenSpace` (is a full-screen app in front on
+  a display: CGS managed spaces via `dlsym`, type 4). `Extensions/` — `Logger(category:)`,
+  `NSScreen.displayID`.
 
 **Features**
 - `Notch/` — the panel. `NotchViewModel`: single source of truth, `progress` (0 = notch,
@@ -85,8 +92,10 @@ Layers — keep them separated:
   item all drive it; owns the panel window and focus; derives the silhouette, content
   opacity and hover zone for the view; owns the selected `PanelTab` (Model), the tab
   progress (its own `SpringDriver`), tab swipes (`TabSwipeTarget`) and gives each tab the
-  keyboard. Models: `TabSwitcherLayout`, `PageDotsLayout`, `TerminalContextLayout` (pure band
-  geometry). Views: `NotchPanel` — borderless non-activating
+  keyboard; implements `DeviceActivityTarget` (the connect peek: `activity`, `activityAmount`
+  stepped with its own `Spring` on the panel's display link). Models: `TabSwitcherLayout`,
+  `PageDotsLayout`, `TerminalContextLayout` (pure band geometry), `ActivityPillLayout` (the
+  pill's size, icon and text). Views: `DeviceActivityView` (the pill's content), `NotchPanel` — borderless non-activating
   `NSPanel` above the menu bar; `canJoinAllSpaces` + `fullScreenAuxiliary` + `stationary`;
   transparent; ordered in at launch, never ordered out. `PanelContentView` — the panel's
   flipped content view (warp/glass below, `NSHostingView` above). `NotchContentView` —
@@ -147,6 +156,18 @@ Layers — keep them separated:
   `ShortcutInput` (key press → shortcut, pure).
 - `Onboarding/` — `OnboardingViewModel`, `OnboardingRecord` (the `didShowOnboarding` flag),
   `OnboardingView`, `OnboardingWindowController`.
+- `Devices/` — the Buds' battery (see *Devices*). Models: `Device`, `DeviceComponent`,
+  `ComponentRole`, `DeviceKind`, `DeviceSource`, `BatteryReading`/`ComponentReading`,
+  `RelativeTime`, `LowBatteryPolicy`, `DeviceActivity`, `DeviceSummary` (pure), and the Buds
+  protocol: `BudsModel` (the per-model table), `BudsFraming`, `BudsStatusLayout`,
+  `BudsMessage`, `BudsChecksum`, `BudsFrameDecoder`, `BudsStatusParser`, `BudsIdentification`
+  (pure, unit-tested). Services: `DeviceStore` (@Observable, generic, JSON in Application
+  Support), `BluetoothBudsMonitor` (connect/disconnect notifications), `BudsConnection` (SDP →
+  RFCOMM → readings, backoff, fallback), `SDPRecords`, `SystemBatteryReader` (fallback),
+  `DevicesPage` (the tab's `MotionContent`: `ImageRenderer` picture), `DeviceActivityTarget`
+  (protocol; `NotchViewModel`). ViewModel: `DevicesViewModel` (events → peeks, relative-time
+  clock). Views: `DevicesCardView` (the pager page: hosting view), `DevicesPageView`,
+  `DeviceCardView`, `BatteryGauge`, `DevicesEmptyView`, `DevicesPalette`.
 - `Capture/` — Draw to ask (see *Capture*). Models: `CaptureSelection` (stroke → box, click →
   window; pure), `CaptureCrop` (points → native pixels; pure), `StrokeGeometry` (Catmull–Rom,
   resampling, rounded-rect points for the morph; pure), `CaptureLook` (every constant +
@@ -164,7 +185,8 @@ Layers — keep them separated:
 **Debug** (DEBUG only) — `DebugHarness` dispatches the launch flags to `SelfTest`
 (`-selftest`), `SnapshotTest` (`-snapshot <dir>`), `EffectTest` (`-effecttest <dir>`),
 `TabTest` (`-tabtest`), `SwipeTest` (`-swipetest`), `HoverTest` (`-hovertest`, `-bandshot`),
-`ClaudeProbe` (`-claudeprobe`), `CaptureTest` (`-capturetest`, `-captureorient`), `SizeTest` (`-sizetest`) and `WarpTest` (`-warptest <dir>`, `-captureidle <s>`); `Support/` holds `DebugImages`,
+`ClaudeProbe` (`-claudeprobe`), `CaptureTest` (`-capturetest`, `-captureorient`), `SizeTest` (`-sizetest`), `DeviceTest` (`-devicetest`) and `WarpTest` (`-warptest <dir>`, `-captureidle <s>`); `MockDevices` (the status item's
+*Mock Devices* menu); harness runs leave Bluetooth alone (`DebugHarness.isRequested`); `Support/` holds `DebugImages`,
 `FramePacingProbe` and `NotchViewModel.waitForRest()` (see *Debug snapshots*).
 
 ## Tab UI (the spec, 2026-10-01, branch `feature/claude-tab`)
@@ -276,6 +298,82 @@ One component (`Features/WebTab/`), two configurations (`WebTabConfiguration`):
 - **Cost:** the window server spends ~50 % of a core while anything in the overlay animates at
   120 Hz (glow turning, shimmer) — the same as the notch opening and closing nonstop (49 %);
   ~4 % with the effects still (Reduce Motion) or off. Main thread: begin 5–11 ms once.
+
+## Devices (2026-10-05, branch `feature/devices-tab`)
+A 4th tab with the Galaxy Buds' battery (left, right, case), live while connected and kept
+with "last seen" after; the data layer is generic so phones/tablets can join later.
+
+**Protocol facts and where they came from** (GalaxyBudsClient by timschneeb, GPLv3: studied
+for facts only — `Model/Constants.cs`, `Model/Specifications/*DeviceSpec.cs`,
+`DeviceSpecHelper.cs`, `Message/SppMessage.cs`, `Message/SppMessageEnums.cs`,
+`Utils/Crc16.cs`, `Message/Decoder/StatusUpdateDecoder.cs` and `ExtendedStatusUpdateDecoder.cs`,
+`App.axaml.cs`, `Galaxy Buds Plus RFComm Protocol Notes.md`, and the macOS backend
+`GalaxyBudsClient.Platform.OSX/Native/src/Bluetooth.mm`; all code here is our own):
+- RFCOMM service UUIDs: Buds (2019) `00001102-0000-1000-8000-00805f9b34fd`; Buds+, Live, Pro
+  the standard SPP `00001101-…-00805f9b34fb`; Buds2 and later (incl. Buds3 Pro)
+  `2e73a4ad-332d-41fc-90e2-16bef06523f2`. Buds2+ also list `d908aab5-7a90-4cbe-8641-86a553db`
+  + 8 hex = Samsung model id (Buds3 Pro 340/341); the byte order isn't clear from the source
+  (its parser is buggy), so both are tried.
+- Framing: `FD` | header (u16 LE: size = id+payload+CRC in the low 10 bits, 0x1000
+  request/response, 0x2000 fragment) | id | payload | CRC-16 LE | `DD`; the Buds (2019) use
+  `FE`/`EE` and a [type, size] header. CRC = CRC-16/XMODEM (poly 0x1021, init 0) over id +
+  payload (check value 0x31C3; the notes' sample frame gives 0xF30F, sent `0F F3`).
+- Battery: `STATUS_UPDATED` 0x60 (sent on every change) [rev, L, R, coupled, main bud,
+  placement (L high nibble, R low: 0 not connected, 1 worn, 2 out, 3 case, 4 closed case),
+  case, charging (Buds2+: 0x10 L, 0x04 R, 0x01 case)]; `EXTENDED_STATUS_UPDATED` 0x61 (sent by
+  the Buds right after the channel opens) [rev, ear type, L, R, coupled, main, placement, case,
+  …settings…, charging at 42 on Buds3/3 Pro (43 on FE/Core/3 FE, revision-dependent on 2 Pro)].
+  Case 101 = unknown (no bud in it). Buds (2019): no case. No request is needed: the client
+  replies MANAGER_INFO (0x88) to 0x61, which we don't (read-only).
+- macOS: `performSDPQuery(_:uuids:)` silently returns nothing since Ventura → query everything;
+  `openRFCOMMChannelSync` reports an error even when the channel opens (we use the async
+  open and accept "open" whatever the status).
+
+**Reading (`BluetoothBudsMonitor` → `BudsConnection`):** IOBluetooth connect notification
+(plus connected-at-launch from the local paired list) → candidate = Galaxy name or any
+audio-class device (renamed Buds look like any headset; "Mewo" had no cached SDP records) →
+cached records first, else one `performSDPQuery` → `BudsIdentification` (model id service,
+Samsung service + name, name) → RFCOMM channel from the record (never hard-coded) →
+`BudsFrameDecoder` (chunked, resyncs on bad SOM/size/CRC/EOM, skips fragments) →
+`BudsStatusParser` (levels outside 1…100 or a disconnected bud = unknown) → `DeviceStore`.
+Non-Buds headsets are left alone for the session. Failure (busy channel, no service, timeout)
+→ `SystemBatteryReader` (HID `BatteryPercent` in the IORegistry, then `system_profiler -json
+SPBluetoothDataType` `device_batteryLevel*`, off main) and retries after 2/10/60 s, then not
+until the next connect; no status 5 s after opening → the fallback meanwhile. Disconnect
+notification → close, stop, store `disconnected`. Nothing runs while no Buds are connected.
+
+**`DeviceStore`:** `Device {id, name, kind, source, model, components, isConnected,
+lastSeen}`, `DeviceComponent {role (left/right/case/main), level?, isCharging?, updatedAt?}`.
+`apply(reading)`: known values take the reading's time, unknown ones keep their old value
+and time (the case). A newer single `main` value (the fallback) shows alone. Events:
+connected / firstReading (first with a level since connect) / reading / disconnected. JSON
+(`~/Library/Application Support/DEXMA/devices.json`, ISO 8601 to the second) written 1 s
+after the last change on a utility queue, and on quit; `isConnected` false on load; `.mock`
+devices dropped by Release builds.
+
+**Tab:** `DevicesPageView` (SwiftUI in `DevicesCardView`, a pager page): a card per device
+(radius 16, white 6 %, 1 px white 7 %, padding 16; full width alone, 2 columns from 2), header
+(icon, name 14 pt semibold, green dot + "Connected" or "Last seen 2h ago" white 45 %), a
+`BatteryGauge` per part (56 pt ring, 5 pt line, track white 12 %, 15 pt rounded digits,
+white / green + bolt while charging and connected / red ≤ 20 %, "—" unknown, 45 % when
+disconnected, its own "3h ago" when ≥ 60 s older than the newest; level changes animate with
+`Spring(duration: 0.45, bounce: 0.2)`, none with Reduce Motion). Relative times: one timer
+aimed at the next change (`RelativeTime.nextChange`), none when nothing shows a time. The
+liquid effect's picture: `ImageRenderer` of the same view (cacheDisplay can't draw SwiftUI
+text), idle like the other tabs. Band: `DeviceSummary.band` of the most recent device.
+
+**Connect peek:** `DevicesViewModel` asks `showDeviceActivity` on the first reading after a
+connect (setting on) and when `LowBatteryPolicy` says a bud (not the case, not charging)
+crossed 20 % or 10 % (once each per connection, re-armed above +5; already low at connect →
+covered by the connect peek, which is then red). `NotchViewModel` refuses while open,
+capturing, or (unless "Show in full screen") over a full-screen space; moves to the opening
+screen like an open; grows `activityAmount` 0 → 1 with the open spring on the panel's display
+link (the jelly gets its speed × the pill's share of the open width; landing squash; screen
+warp bends around it via `LiquidMotionEngine.activity`); `ActivityPillLayout`: notch height +
+20, wings ≥ 70 pt (text-fitted: buds on one line, case smaller below — one line with the
+case was 581 pt wide), icon centred left, text right. ~3 s, longer while hovered; the hover
+zone covers the pill (the hover monitor runs while it's out even with peek-on-hover off);
+a click (peek state) opens on Devices. Never key. Opening/capture collapses it.
 
 ## Animation model
 - `progress` is always the on-screen (presentation) value. `SpringDriver` steps it each
@@ -394,6 +492,8 @@ One component (`Features/WebTab/`), two configurations (`WebTabConfiguration`):
   Performance / Balanced / Quality screen-warp slider) (same branch).
 - [x] 16. Draw to ask (capture → claude.ai) (branch `feature/capture`, from
   `feature/claude-tab`; pushed, not merged: the user tests first).
+- [x] 17. Devices tab: Galaxy Buds battery over Bluetooth, DeviceStore, connect peek (branch
+  `feature/devices-tab`, from `feature/capture`; pushed, not merged: the user tests first).
 
 The user asked (2026-10-01) to run phases 2–8 without stopping between them: per phase, read
 package sources, build to 0 errors/0 warnings, launch-check, `git commit -m "Phase N: …"`,
@@ -614,6 +714,26 @@ update Progress below.
   cause unknown; the user has to sign in again), the Settings section's look, saving copies,
   new chat per capture, the onboarding sheet and relaunch, a second display, the feel.
 
+- **Phase 17 (Devices):** see *Devices*. Verified: 0 warnings Debug/Release; unit tests (frame
+  decoder incl. split/corrupt/fragment/legacy, CRC vectors, Buds3 Pro extended status with
+  charging, unknown case/disconnected bud, per-model layouts, identification incl. renamed
+  "Mewo", device merge/staleness/fallback display, relative time, low battery policy, store
+  events and persistence, pill layout and shape blend); `-devicetest` (mock Buds through the
+  store): no peek before a reading, peek text, pill 421 × 52 (notch 185 × 32) with the
+  silhouette matching, no key/frontmost/click-through change, pointer zone, live update,
+  collapse after 3 s, red peek at 20 % and 10 % only, case kept when unknown, click → open on
+  Devices, band summary, page picture 650 × 350 @2x, ⌘1/⌘4/⌃Tab, 4 pages, no peek while open,
+  "Last seen just now", values kept, close/reopen, forget; pacing: the first motion after
+  launch drops ~3 frames on the existing hover peek too, after that both device peeks 0 late
+  frames of ~150 (step p95 ~1 ms) in two runs; `-swipetest` all OK (rubber band past Devices),
+  `-sizetest` OK at all sizes, `-selftest` as before; `-hovertest`'s 3 confinement FAILs are
+  identical on the base commit (live video behind the warp; the Reset button moved when the
+  Capture button came) — pre-existing. Release: mock menu absent, launches with "Buds
+  monitor: on", 0.0 % CPU idle. Bluetooth was already allowed for DEXMA. The full-screen check
+  saw the user's full-screen spaces (type 4) correctly. Unverified (needs the Buds): the real
+  RFCOMM stream on the Buds3 Pro (SDP records, channel, first 0x61, charging offset 42), the
+  fallback's sources for these Buds, connect/disconnect notifications on hardware, energy.
+
 ## Hardware test checklist (needs the user)
 - Tabs: ⌘1/⌘2/⌘L, clicking segments, focus after reopening (page vs field), Esc on both tabs.
 - Search: a Google search, typing in Google's own fields, IME in the field, link clicks,
@@ -636,6 +756,9 @@ update Progress below.
   closed, frozen video, glow/hint, long scribbles, morph, click-to-window, Esc at every stage,
   Retina sharpness, flight, attaches and sends, clipboard restored, chip when signed out, new
   chat, onboarding, second display, Reduce Motion, no DEXMA in captures).
+- Devices: see the checklist given on 2026-10-05 (connect peek values, bud in/out of the case,
+  last seen, the case's own time, charging colours, low-battery peek, restart, ⌘4/swipe/hover,
+  mock menu absent in Release, energy impact).
 - Claude: sign-in (Google popup, email + ⌘L link), still signed in after a restart, focus
   in the message box, New chat, Open in browser, external links in the browser, pasting
   and dragging an image, page zoom.
@@ -646,6 +769,9 @@ Screen Recording isn't granted to the CLI, but an app can render its own window.
 frontmost app at each step) and `-snapshot <dir>`: they type `ls /` into the shell, render the panel at progress
 0/0.15/0.5/1 to PNGs, and quit. Run the binary directly:
 `.../Debug/DEXMA.app/Contents/MacOS/DEXMA -snapshot /tmp/snap`, then view the PNGs.
+`-devicetest <dir>` checks the Devices tab and the connect peek with mock Buds (launch it with
+`open -n <app> --stdout <dir>/out.txt --args -devicetest <dir>`, read out.txt + PNGs); it also
+starts the real Buds monitor once (other harness runs never touch Bluetooth).
 `-capturetest <dir>` checks Draw to ask end to end (see Progress, Phase 16; it covers the
 built-in display with the overlay for ~2 min and borrows the clipboard, restoring it); launch it
 with `open -n <app> --args -capturetest <dir>` to include real freezes, then read
@@ -680,8 +806,11 @@ and never quits (wrap runs in a watchdog).
   the legacy `com.jasontio.terminal-application` until the user changes it in Xcode
   (recommended `com.jasontio.dexma`); `DefaultsMigration` carries settings across. A new
   bundle id also means re-granting Accessibility and re-enabling Launch at Login.
-- The Debug `-selftest` deletes the `panelWidth` and `hotKey` defaults when it finishes (real
-  prefs domain): back up the user's prefs first if they have customised those.
+- The Debug `-selftest` deletes the `panelWidth` and `hotKey` defaults when it finishes, and
+  `-sizetest` `panelWidth`/`panelHeight` (real prefs domain): back up the user's prefs first
+  (the user has `panelWidth` = 670) and restore them after.
+- Devices are stored in `~/Library/Application Support/DEXMA/devices.json` (shared by Debug and
+  Release; mock devices only survive in Debug).
 - Release build: `…build.sh`-style `xcodebuild -configuration Release`, then
   `ditto <DerivedData>/Build/Products/Release/DEXMA.app build/DEXMA.app` (git-ignored).
 - Reference hardware: 14" MacBook Pro, built-in display 1512×982 pt @2x, 120 Hz; notch
@@ -745,3 +874,11 @@ and never quits (wrap runs in a watchdog).
 - `pkill -f <pattern>` in a watchdog also matches the shell running it (killed the tool call):
   poll for the report file instead.
 - `CGWindowListCopyWindowInfo` lists front to back; names need Screen Recording, bounds don't.
+- `NSApp.currentSystemPresentationOptions` doesn't report another app's full screen (0 while
+  the user was in full-screen spaces); the CGS managed-spaces `type` (4) does.
+- IOBluetooth: a renamed headset has no cached SDP records until something queries it; query
+  with `performSDPQuery(_:)` (the UUID variant returns nothing); `IOBluetoothRFCOMMChannel`'s
+  close is `close()` in Swift. Delegate callbacks are `nonisolated` here, hopping to main.
+- Local `func`s inside a `Task { @MainActor in … }` aren't main-actor isolated in this build
+  setup (warnings): mark them `@MainActor`.
+- `ImageRenderer` renders a SwiftUI view to a `CGImage` with its text (unlike `cacheDisplay`).
