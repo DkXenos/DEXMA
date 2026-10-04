@@ -114,6 +114,19 @@ For a Release build, use `-configuration Release`. The app ends up in
 DEXMA is not sandboxed, because it starts a real login shell with full access to your files.
 Hardened Runtime is on.
 
+### Run the latest build from anywhere
+
+`scripts/dexma` builds the current checkout (Release, incremental), quits the DEXMA that's
+running and launches the new one; a failed build leaves the running one alone. Add it to your
+shell once:
+
+```sh
+echo 'alias dexma="/path/to/DEXMA/scripts/dexma"' >> ~/.zshrc
+```
+
+Then `dexma` (or `dexma -h` for the options: `-d` Debug build, `-n` relaunch without
+building, `-p` git pull first, `-q` quit, `-l` follow the log).
+
 ## Permissions
 
 DEXMA asks for as little as it can. Everything except scroll blocking, Draw to ask and the

@@ -80,8 +80,10 @@ final class BluetoothBudsMonitor: NSObject {
         guard BudsIdentification.isCandidate(name: name, classOfDevice: device.classOfDevice) else { return }
         let cached = SDPRecords.serviceUUIDs(of: device)
         let model = BudsIdentification.model(name: name, serviceUUIDs: cached)
+        Self.logger.notice("Headset connected: \(name, privacy: .public), \(cached.count) cached services → \(model?.displayName ?? "not identified yet", privacy: .public)")
         if model == nil, !cached.isEmpty, BudsIdentification.model(named: name) == nil {
             notBuds.insert(id)  // Its cached services already say it isn't Buds.
+            Self.logger.notice("\(name, privacy: .public) isn't Galaxy Buds (cached services)")
             return
         }
         let connection = BudsConnection(device: device, id: id, model: model)

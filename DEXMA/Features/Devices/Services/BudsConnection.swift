@@ -19,6 +19,8 @@ final class BudsConnection: NSObject, IOBluetoothRFCOMMChannelDelegate {
     private static let openTimeout: TimeInterval = 10
     /// The channel is open but nothing came: show macOS's level meanwhile.
     private static let firstStatusTimeout: TimeInterval = 5
+    /// The connect notification can come a moment before the device reports itself connected.
+    private static let notConnectedRetries = 5
 
     let device: IOBluetoothDevice
     let id: String
@@ -39,6 +41,7 @@ final class BudsConnection: NSObject, IOBluetoothRFCOMMChannelDelegate {
     private var sdpPending = false
     /// A status message from the Buds arrived (the fallback is no longer needed).
     private var hasStatus = false
+    private var notConnectedChecks = 0
 
     /// `model`: already known from the name or cached records (nil: the query decides).
     init(device: IOBluetoothDevice, id: String, model: BudsModel?) {
@@ -64,7 +67,19 @@ final class BudsConnection: NSObject, IOBluetoothRFCOMMChannelDelegate {
     // MARK: Steps
 
     private func connect(usingCache: Bool) {
-        guard !stopped, device.isConnected() else { return }
+        guard !stopped else { return }
+        guard device.isConnected() else {
+            // Not up yet (or gone again): look again shortly, a few times.
+            guard notConnectedChecks < Self.notConnectedRetries else {
+                Self.logger.notice("Device never reported itself connected; waiting for the next connect")
+                return
+            }
+            notConnectedChecks += 1
+            let work = DispatchWorkItem { [weak self] in self?.connect(usingCache: usingCache) }
+            retry = work
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1, execute: work)
+            return
+        }
         if usingCache, let model, let channelID = SDPRecords.rfcommChannel(of: device, service: model.serviceUUID) {
             open(channelID)
         } else {
@@ -74,6 +89,7 @@ final class BudsConnection: NSObject, IOBluetoothRFCOMMChannelDelegate {
 
     /// All services (a query for specific UUIDs silently returns nothing since macOS 13).
     private func querySDP() {
+        Self.logger.notice("Querying the device's services (SDP)")
         sdpPending = true
         let status = device.performSDPQuery(self)
         guard status == kIOReturnSuccess else {
@@ -180,7 +196,11 @@ final class BudsConnection: NSObject, IOBluetoothRFCOMMChannelDelegate {
     /// Shows macOS's level and tries again later (2 s, 10 s, 60 s), then gives up until the next
     /// connect.
     private func fail(_ reason: String) {
-        guard !stopped, device.isConnected() else { return }
+        guard !stopped else { return }
+        guard device.isConnected() else {
+            Self.logger.notice("\(reason, privacy: .public) (device no longer connected)")
+            return
+        }
         timeout?.cancel()
         closeChannel()
         readFallback()

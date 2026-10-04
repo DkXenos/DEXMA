@@ -7,12 +7,27 @@ enum SDPRecords {
     /// The ServiceClassIDList attribute: the UUIDs a service record says it implements.
     private static let serviceClassIDList: BluetoothSDPServiceAttributeID = 0x0001
 
-    /// Every service class UUID in the device's records, lowercase 128-bit strings.
+    /// Every service class UUID in the device's records, lowercase 128-bit strings. macOS's
+    /// cached records keep a one-UUID list as the bare UUID element, not a sequence (the Buds3
+    /// Pro's are all like that), so both forms are read.
     static func serviceUUIDs(of device: IOBluetoothDevice) -> [String] {
         let records = (device.services ?? []).compactMap { $0 as? IOBluetoothSDPServiceRecord }
-        return records.flatMap { record -> [String] in
-            let list = record.getAttributeDataElement(serviceClassIDList)?.getArrayValue() ?? []
-            return list.compactMap { ($0 as? IOBluetoothSDPDataElement)?.getUUIDValue().flatMap(string) }
+        return records.flatMap { record in
+            record.getAttributeDataElement(serviceClassIDList).map(uuids) ?? []
+        }
+    }
+
+    /// The UUIDs in a data element: itself if it's a UUID, its items if it's a sequence or
+    /// an alternative.
+    private nonisolated static func uuids(in element: IOBluetoothSDPDataElement) -> [String] {
+        switch element.getTypeDescriptor() {
+        case BluetoothSDPDataElementTypeDescriptor(kBluetoothSDPDataElementTypeUUID):
+            return element.getUUIDValue().flatMap(string).map { [$0] } ?? []
+        case BluetoothSDPDataElementTypeDescriptor(kBluetoothSDPDataElementTypeDataElementSequence),
+             BluetoothSDPDataElementTypeDescriptor(kBluetoothSDPDataElementTypeDataElementAlternative):
+            return (element.getArrayValue() ?? []).compactMap { $0 as? IOBluetoothSDPDataElement }.flatMap(uuids)
+        default:
+            return []
         }
     }
 

@@ -42,15 +42,12 @@ nonisolated enum BudsIdentification {
         return nil
     }
 
-    /// "d908aab5-7a90-4cbe-8641-86a553db" + 8 hex digits: Samsung's model id. The byte order
-    /// isn't documented, so both are tried against the known ids.
+    /// "d908aab5-7a90-4cbe-8641-86a553db" + 4 hex digits: Samsung's model id, big-endian (the
+    /// Buds3 Pro "Mewo" lists …53db0154: 340).
     private static func modelFromIDService(_ uuid: String) -> BudsModel? {
         guard uuid.hasPrefix(BudsModel.modelIDServicePrefix) else { return nil }
         let hex = String(uuid.dropFirst(BudsModel.modelIDServicePrefix.count))
-        guard hex.count == 8, let value = UInt32(hex, radix: 16) else { return nil }
-        for id in [value, value.byteSwapped] {
-            if let model = BudsModel.allCases.first(where: { $0.deviceIDs.contains(id) }) { return model }
-        }
-        return nil
+        guard hex.count == 4, let id = UInt32(hex, radix: 16) else { return nil }
+        return BudsModel.allCases.first { $0.deviceIDs.contains(id) }
     }
 }

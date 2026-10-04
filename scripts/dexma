@@ -1,0 +1,89 @@
+#!/bin/zsh
+# dexma — build DEXMA from this repo's current checkout and run it (replacing a running one).
+#
+#   dexma             build Release (incremental), quit the running DEXMA, launch the new one
+#   dexma -d          the same with the Debug build (Mock Devices menu, debug harness flags)
+#   dexma -n          don't build: just (re)launch the last build
+#   dexma -p          git pull --ff-only first
+#   dexma -q          quit DEXMA and exit
+#   dexma -l          follow DEXMA's log (Ctrl-C to stop)
+#
+# The build is checked first; a failed build leaves the running DEXMA alone.
+set -euo pipefail
+
+SCRIPT="${0:A}"
+REPO="${SCRIPT:h:h}"
+SUBSYSTEM="com.jasontio.terminal-application"
+CONFIG=Release
+BUILD=1
+PULL=0
+
+usage() { sed -n '2,10p' "$SCRIPT" | sed -E 's/^# ?//'; }
+
+while getopts "dnpqlh" opt; do
+  case $opt in
+    d) CONFIG=Debug ;;
+    n) BUILD=0 ;;
+    p) PULL=1 ;;
+    q) BUILD=0; CONFIG=quit ;;
+    l) exec /usr/bin/log stream --style compact --predicate "subsystem == \"$SUBSYSTEM\"" ;;
+    h) usage; exit 0 ;;
+    *) usage; exit 1 ;;
+  esac
+done
+
+quit_dexma() {
+  pgrep -x DEXMA >/dev/null || return 0
+  # DEXMA quits normally on SIGTERM (saves its devices first).
+  pkill -TERM -x DEXMA || true
+  for _ in {1..50}; do pgrep -x DEXMA >/dev/null || return 0; sleep 0.1; done
+  echo "dexma: DEXMA didn't quit in 5 s, forcing it" >&2
+  pkill -KILL -x DEXMA || true
+}
+
+if [[ $CONFIG == quit ]]; then
+  quit_dexma
+  echo "dexma: quit"
+  exit 0
+fi
+
+cd "$REPO"
+if (( PULL )); then git pull --ff-only; fi
+
+XCODEBUILD=(xcodebuild -project DEXMA.xcodeproj -scheme DEXMA -configuration "$CONFIG"
+            -destination 'platform=macOS,arch=arm64' -skipPackagePluginValidation -skipMacroValidation)
+
+if (( BUILD )); then
+  echo "dexma: building $CONFIG ($(git rev-parse --abbrev-ref HEAD) @ $(git rev-parse --short HEAD)$( [[ -n $(git status --porcelain) ]] && echo ', with local changes'))…"
+  LOG=$(mktemp -t dexma-build)
+  if ! "${XCODEBUILD[@]}" build >"$LOG" 2>&1; then
+    grep -E 'error:' "$LOG" | sort -u >&2 || true
+    echo "dexma: build failed (full log: $LOG); the running DEXMA was left alone" >&2
+    exit 1
+  fi
+  grep -E 'warning:' "$LOG" | grep -v appintents | sort -u >&2 || true
+  rm -f "$LOG"
+fi
+
+PRODUCTS=$("${XCODEBUILD[@]}" -showBuildSettings 2>/dev/null | awk -F' = ' '/ BUILT_PRODUCTS_DIR = /{print $2; exit}')
+APP="$PRODUCTS/DEXMA.app"
+if [[ ! -d $APP ]]; then
+  echo "dexma: no $CONFIG build yet at $APP (run dexma without -n)" >&2
+  exit 1
+fi
+if [[ $CONFIG == Release ]]; then
+  # The copy you run, like the README's Release build (build/ is git-ignored).
+  mkdir -p "$REPO/build"
+  ditto "$APP" "$REPO/build/DEXMA.app.new"
+  quit_dexma
+  if [[ -d "$REPO/build/DEXMA.app" ]]; then mv "$REPO/build/DEXMA.app" "$REPO/build/DEXMA.app.old"; fi
+  mv "$REPO/build/DEXMA.app.new" "$REPO/build/DEXMA.app"
+  if [[ -d "$REPO/build/DEXMA.app.old" ]]; then rm -r "$REPO/build/DEXMA.app.old"; fi
+  APP="$REPO/build/DEXMA.app"
+else
+  quit_dexma
+fi
+
+# Through LaunchServices, so macOS treats it as DEXMA itself (its own permissions).
+open "$APP"
+echo "dexma: running $CONFIG build ($APP)"

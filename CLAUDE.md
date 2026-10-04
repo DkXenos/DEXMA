@@ -312,8 +312,11 @@ for facts only — `Model/Constants.cs`, `Model/Specifications/*DeviceSpec.cs`,
 - RFCOMM service UUIDs: Buds (2019) `00001102-0000-1000-8000-00805f9b34fd`; Buds+, Live, Pro
   the standard SPP `00001101-…-00805f9b34fb`; Buds2 and later (incl. Buds3 Pro)
   `2e73a4ad-332d-41fc-90e2-16bef06523f2`. Buds2+ also list `d908aab5-7a90-4cbe-8641-86a553db`
-  + 8 hex = Samsung model id (Buds3 Pro 340/341); the byte order isn't clear from the source
-  (its parser is buggy), so both are tried.
+  + 4 hex = Samsung model id, big-endian (Buds3 Pro 340/341).
+- Seen on the user's Buds3 Pro "Mewo" (macOS's cached records, 2026-10-05): the status service
+  is "GEARMANAGER" on RFCOMM channel 27; the model id service `…86a553db0154` (340);
+  "SAMSUNGDEVICE" `a23d00bc-…` ch 28, "SPPSERVICE4" `f8620674-…` (Samsung's alternative
+  mode) ch 29, "DEVICEID" ch 22, "FACTORY" (SPP) ch 20, "BTIS" ch 21.
 - Framing: `FD` | header (u16 LE: size = id+payload+CRC in the low 10 bits, 0x1000
   request/response, 0x2000 fragment) | id | payload | CRC-16 LE | `DD`; the Buds (2019) use
   `FE`/`EE` and a [type, size] header. CRC = CRC-16/XMODEM (poly 0x1021, init 0) over id +
@@ -325,6 +328,9 @@ for facts only — `Model/Constants.cs`, `Model/Specifications/*DeviceSpec.cs`,
   …settings…, charging at 42 on Buds3/3 Pro (43 on FE/Core/3 FE, revision-dependent on 2 Pro)].
   Case 101 = unknown (no bud in it). Buds (2019): no case. No request is needed: the client
   replies MANAGER_INFO (0x88) to 0x61, which we don't (read-only).
+- macOS keeps a record's one-UUID ServiceClassIDList as a bare UUID element, not a sequence
+  (`SDPRecords` reads both; reading only sequences found nothing and the Buds were never
+  identified — the first hardware bug).
 - macOS: `performSDPQuery(_:uuids:)` silently returns nothing since Ventura → query everything;
   `openRFCOMMChannelSync` reports an error even when the channel opens (we use the async
   open and accept "open" whatever the status).
@@ -336,6 +342,8 @@ cached records first, else one `performSDPQuery` → `BudsIdentification` (model
 Samsung service + name, name) → RFCOMM channel from the record (never hard-coded) →
 `BudsFrameDecoder` (chunked, resyncs on bad SOM/size/CRC/EOM, skips fragments) →
 `BudsStatusParser` (levels outside 1…100 or a disconnected bud = unknown) → `DeviceStore`.
+Each step logs (category "Buds"); if the device isn't connected yet when the notification
+comes, it looks again every 1 s, 5 times.
 Non-Buds headsets are left alone for the session. Failure (busy channel, no service, timeout)
 → `SystemBatteryReader` (HID `BatteryPercent` in the IORegistry, then `system_profiler -json
 SPBluetoothDataType` `device_batteryLevel*`, off main) and retries after 2/10/60 s, then not
@@ -769,6 +777,9 @@ Screen Recording isn't granted to the CLI, but an app can render its own window.
 frontmost app at each step) and `-snapshot <dir>`: they type `ls /` into the shell, render the panel at progress
 0/0.15/0.5/1 to PNGs, and quit. Run the binary directly:
 `.../Debug/DEXMA.app/Contents/MacOS/DEXMA -snapshot /tmp/snap`, then view the PNGs.
+`-budsprobe` runs the Buds identification on every paired headset's cached SDP records (no
+radio) and prints the model and status channel (launch with `open -n <app> --stdout <file>
+--args -budsprobe`).
 `-devicetest <dir>` checks the Devices tab and the connect peek with mock Buds (launch it with
 `open -n <app> --stdout <dir>/out.txt --args -devicetest <dir>`, read out.txt + PNGs); it also
 starts the real Buds monitor once (other harness runs never touch Bluetooth).
@@ -811,8 +822,10 @@ and never quits (wrap runs in a watchdog).
   (the user has `panelWidth` = 670) and restore them after.
 - Devices are stored in `~/Library/Application Support/DEXMA/devices.json` (shared by Debug and
   Release; mock devices only survive in Debug).
-- Release build: `…build.sh`-style `xcodebuild -configuration Release`, then
-  `ditto <DerivedData>/Build/Products/Release/DEXMA.app build/DEXMA.app` (git-ignored).
+- Release build: `scripts/dexma` (the user's `dexma` alias in ~/.zshrc): builds Release
+  incrementally (a failed build leaves the running app alone), `ditto`s it to `build/DEXMA.app`
+  (git-ignored), quits the running DEXMA (SIGTERM, which DEXMA turns into a normal quit) and
+  `open`s the new one. `-d` Debug, `-n` no build, `-p` pull first, `-q` quit, `-l` log stream.
 - Reference hardware: 14" MacBook Pro, built-in display 1512×982 pt @2x, 120 Hz; notch
   185×32 pt (left aux 665 pt, right aux 662 pt — not exactly centered). An external
   2560×1440 display (no notch) is usually the PRIMARY screen.

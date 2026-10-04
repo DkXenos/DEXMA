@@ -26,7 +26,7 @@ nonisolated enum BudsModel: String, CaseIterable, Codable {
     static let serialPortServiceUUID = "00001101-0000-1000-8000-00805f9b34fb"
     static let samsungServiceUUID = "2e73a4ad-332d-41fc-90e2-16bef06523f2"
     /// Buds2 and later also list a service UUID made of this prefix and their model id
-    /// (`deviceIDs`) in hex, which identifies them even when renamed.
+    /// (`deviceIDs`) as 4 hex digits, which identifies them even when renamed.
     static let modelIDServicePrefix = "d908aab5-7a90-4cbe-8641-86a553db"
 
     var displayName: String {

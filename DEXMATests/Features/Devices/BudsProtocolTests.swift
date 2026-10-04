@@ -102,11 +102,10 @@ struct BudsProtocolTests {
     @Test func renamedBudsAreFoundByTheirServices() {
         let samsung = BudsModel.samsungServiceUUID
         #expect(BudsIdentification.model(name: "Mewo", serviceUUIDs: [samsung]) == .unknownSamsung)
-        // The model id service (340 = Buds3 Pro silver), in either byte order.
-        let big = BudsModel.modelIDServicePrefix + "00000154"
-        let little = BudsModel.modelIDServicePrefix + "54010000"
-        #expect(BudsIdentification.model(name: "Mewo", serviceUUIDs: [samsung, big]) == .buds3Pro)
-        #expect(BudsIdentification.model(name: "Mewo", serviceUUIDs: [little.uppercased()]) == .buds3Pro)
+        // The model id service, exactly as Mewo (Buds3 Pro, 340 = 0x154) lists it.
+        let modelID = "d908aab5-7a90-4cbe-8641-86a553db0154"
+        #expect(BudsIdentification.model(name: "Mewo", serviceUUIDs: [samsung, modelID]) == .buds3Pro)
+        #expect(BudsIdentification.model(name: "Mewo", serviceUUIDs: [modelID.uppercased()]) == .buds3Pro)
         #expect(BudsIdentification.model(name: "Mewo", serviceUUIDs: ["0000110b-0000-1000-8000-00805f9b34fb"]) == nil)
     }
 

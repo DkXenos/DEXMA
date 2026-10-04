@@ -8,7 +8,7 @@ import AppKit
 enum DebugHarness {
     private static let flags = ["-selftest", "-captureidle", "-warptest", "-sizetest", "-captureorient", "-capturetest",
                                 "-claudeprobe", "-swipetest", "-bandshot", "-hovertest", "-tabtest", "-effecttest",
-                                "-snapshot", "-devicetest"]
+                                "-snapshot", "-devicetest", "-budsprobe"]
 
     /// A harness run: the app leaves Bluetooth alone (no permission prompt mid-test);
     /// `-devicetest` starts the Buds monitor itself.
@@ -24,7 +24,9 @@ enum DebugHarness {
             return arguments[index + 1]
         }
         setvbuf(stdout, nil, _IOLBF, 0)  // Line-buffered, so a killed test run keeps its output.
-        if arguments.contains("-selftest") {
+        if arguments.contains("-budsprobe") {
+            BudsProbe.run()
+        } else if arguments.contains("-selftest") {
             SelfTest.run(coordinator: coordinator, panel: panel, notch: notch, session: session)
         } else if let seconds = value(after: "-captureidle") {
             WarpTest.keepCapturing(notch: notch, seconds: Double(seconds) ?? 20)
