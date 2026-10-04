@@ -209,8 +209,13 @@ final class BudsConnection: NSObject, IOBluetoothRFCOMMChannelDelegate {
         bytesReceived += bytes.count
         for message in messages {
             guard let reading = BudsStatusParser.reading(from: message, model: model) else { continue }
+            // Every reading (a few a minute at most): levels, charging, and the placement byte
+            // (L high nibble, R low: 1 worn, 2 out, 3 in the case) — the case only reports
+            // while a bud is in it.
+            let layout = message.id == BudsMessage.statusUpdated ? model.statusLayout : model.extendedStatusLayout
+            let placement = layout.placement.flatMap { $0 < message.payload.count ? message.payload[$0] : nil }
+            Self.logger.notice("Reading 0x\(String(format: "%02x", message.id), privacy: .public): \(reading.components.map { "\($0.role.shortTitle) \($0.level.map(String.init) ?? "?")\($0.isCharging == true ? "⚡" : "")" }.joined(separator: ", "), privacy: .public); placement 0x\(String(format: "%02x", placement ?? 0), privacy: .public)")
             if !hasStatus {
-                Self.logger.notice("First battery reading: \(reading.components.map { "\($0.role.shortTitle) \($0.level.map(String.init) ?? "?")" }.joined(separator: ", "), privacy: .public)")
                 hasStatus = true
                 attempt = 0
                 timeout?.cancel()
