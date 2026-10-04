@@ -41,6 +41,17 @@ struct NotchContentView: View {
                 .opacity(moving ? 0 : contentOpacity)
                 .clipShape(silhouette.shape)
                 .allowsHitTesting(viewModel.state == .open)
+            // The Devices connect peek: on the pill grown out of the notch, squashed and
+            // stretched with it.
+            if let activity = viewModel.activity, let layout = viewModel.activityLayout {
+                DeviceActivityView(activity: activity, layout: layout)
+                    .frame(width: panel.width, height: panel.height, alignment: .topLeading)
+                    .scaleEffect(x: silhouette.scale.width, y: silhouette.scale.height,
+                                 anchor: UnitPoint(x: geometry.notchCenterXInPanel / max(panel.width, 1), y: 0))
+                    .opacity(viewModel.activityContentOpacity)
+                    .clipShape(silhouette.shape)
+                    .allowsHitTesting(false)
+            }
         }
         .frame(width: panel.width, height: panel.height, alignment: .topLeading)
         .ignoresSafeArea()

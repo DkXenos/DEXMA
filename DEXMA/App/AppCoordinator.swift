@@ -10,6 +10,10 @@ final class AppCoordinator: WindowRouter {
     let settings = AppSettings()
     private let accessibility = AccessibilityPermission()
     private let screenRecording = ScreenRecordingPermission()
+    private let bluetooth = BluetoothPermission()
+    private let deviceStore = DeviceStore()
+    private lazy var budsMonitor = BluetoothBudsMonitor(store: deviceStore)
+    private var devices: DevicesViewModel?
     private let hover = HoverMonitor()
     private let scrollBlocker = ScrollBlocker()
     private lazy var geometryProvider = NotchGeometryProvider(settings: settings)
@@ -37,9 +41,18 @@ final class AppCoordinator: WindowRouter {
         let pager = ContentPagerView(size: geometry.contentFrame.size, cornerRadius: NotchGeometry.cardRadius)
         let runningDot = RunningDotView(frame: .zero)
         let urlField = URLEntryField(frame: .zero)
-        let notch = NotchViewModel(panel: panel, session: session, search: search, claude: claude, pager: pager,
-                                   runningDot: runningDot, urlField: urlField, geometry: geometry)
+        // The Devices tab: what's remembered shows at once; the Buds are read when they connect.
+        let devices = DevicesViewModel(store: deviceStore, bluetooth: bluetooth)
+        let devicesPage = DevicesPage(viewModel: devices, size: geometry.contentFrame.size)
+        let notch = NotchViewModel(panel: panel, session: session, search: search, claude: claude, devices: devices,
+                                   devicesPage: devicesPage, pager: pager, runningDot: runningDot, urlField: urlField,
+                                   geometry: geometry)
         notch.geometryForOpening = { [weak self] in self?.geometryProvider.makeGeometry() }
+        devices.activityTarget = notch
+        devices.onForget = { [weak self] id in self?.budsMonitor.forget(id) }
+        // The connect peek's pill takes the pointer (to be clicked) even with the hover peek off.
+        notch.onActivityVisibilityChange = { [weak self] _ in self?.updateHoverMonitor() }
+        self.devices = devices
         // Pre-warm: the capture overlay (window, layers, hint) exists from launch, off screen.
         let capture = CaptureViewModel(panel: CaptureOverlayPanel(), claude: claude.session, router: self)
         capture.target = notch
@@ -87,9 +100,19 @@ final class AppCoordinator: WindowRouter {
         applySettings()
         let menuBar = MenuBarViewModel(settings: settings, notch: notch, capture: capture, router: self)
         statusItem = StatusItemController(viewModel: menuBar)
+        #if DEBUG
+        let mockDevices = MockDevices(store: deviceStore)
+        statusItem?.debugItems = { [mockDevices] in [mockDevices.menuItem()] }
+        #endif
+        // Bluetooth: macOS asks once; then only connect/disconnect events wake DEXMA.
+        #if DEBUG
+        if !DebugHarness.isRequested { budsMonitor.start() }
+        #else
+        budsMonitor.start()
+        #endif
         NSApp.mainMenu = MainMenu.make(viewModel: menuBar)
         Self.logger.notice(
-            "Launched. Multitouch gestures: \(gestures.isRunning ? "on" : "unavailable", privacy: .public); scroll blocking: \(self.scrollBlocker.isActive ? "on" : "waiting for Accessibility", privacy: .public)")
+            "Launched. Multitouch gestures: \(gestures.isRunning ? "on" : "unavailable", privacy: .public); scroll blocking: \(self.scrollBlocker.isActive ? "on" : "waiting for Accessibility", privacy: .public); Buds monitor: \(self.budsMonitor.isRunning ? "on" : "no Bluetooth access", privacy: .public)")
 
         if !OnboardingRecord.isSeen {
             showWelcome()
@@ -108,6 +131,19 @@ final class AppCoordinator: WindowRouter {
         capture?.cancelDrawing()
         guard let notch, notch.state != .open, let geometry = geometryProvider.makeGeometry() else { return }
         notch.updateGeometry(geometry)
+    }
+
+    #if DEBUG
+    /// `-devicetest`: the monitor's launch check. Returns whether it's listening.
+    func debugStartBudsMonitor() -> Bool {
+        budsMonitor.start()
+        return budsMonitor.isRunning
+    }
+    #endif
+
+    /// Quitting: the devices' latest values are saved now (the store's save is debounced).
+    func willTerminate() {
+        deviceStore.saveNow()
     }
 
     // MARK: Settings
@@ -140,7 +176,18 @@ final class AppCoordinator: WindowRouter {
         } else {
             gestures.stop()
         }
-        if settings.hoverToPeek { hover.start() } else { hover.stop() }
+        if let devices {
+            devices.peeksOnConnect = settings.devicePeekOnConnect
+            devices.lowBatteryAlerts = settings.deviceLowBatteryAlerts
+            devices.peeksInFullScreen = settings.devicePeekInFullScreen
+        }
+        notch.hoverPeeks = settings.hoverToPeek
+        updateHoverMonitor()
+    }
+
+    /// The pointer is watched for the hover peek, and while the connect peek's pill is out.
+    private func updateHoverMonitor() {
+        if settings.hoverToPeek || notch?.activity != nil { hover.start() } else { hover.stop() }
     }
 
     // MARK: Windows (WindowRouter)
@@ -148,8 +195,10 @@ final class AppCoordinator: WindowRouter {
     func showSettings() {
         if settingsWindow == nil {
             guard let gestures, let hotKey, let captureHotKey else { return }
+            guard let devices else { return }
             let viewModel = SettingsViewModel(settings: settings, accessibility: accessibility,
-                                              screenRecording: screenRecording, gestures: gestures,
+                                              screenRecording: screenRecording, bluetooth: bluetooth,
+                                              devices: devices, gestures: gestures,
                                               hotKeys: [hotKey, captureHotKey], router: self)
             settingsWindow = SettingsWindowController(viewModel: viewModel)
         }

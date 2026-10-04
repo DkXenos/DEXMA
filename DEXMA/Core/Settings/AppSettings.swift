@@ -53,6 +53,13 @@ final class AppSettings {
     /// …or this, 0 = off … 1 = full.
     var captureEffectIntensity: Double { didSet { save(captureEffectIntensity, "captureEffectIntensity") } }
 
+    /// Devices: the notch peeks with the levels when a device connects…
+    var devicePeekOnConnect: Bool { didSet { save(devicePeekOnConnect, "devicePeekOnConnect") } }
+    /// …and in red when a bud drops to 20 % and 10 %…
+    var deviceLowBatteryAlerts: Bool { didSet { save(deviceLowBatteryAlerts, "deviceLowBatteryAlerts") } }
+    /// …also while a full-screen app is in front.
+    var devicePeekInFullScreen: Bool { didSet { save(devicePeekInFullScreen, "devicePeekInFullScreen") } }
+
     /// The capture effects' strength in use.
     var captureEffectiveIntensity: Double {
         captureEffectsFollowGlass ? effectIntensity : captureEffectIntensity
@@ -94,6 +101,9 @@ final class AppSettings {
         captureSavesCopies = bool("captureSavesCopies", false)
         captureEffectsFollowGlass = bool("captureEffectsFollowGlass", true)
         captureEffectIntensity = double("captureEffectIntensity", 1, Self.effectIntensityRange)
+        devicePeekOnConnect = bool("devicePeekOnConnect", true)
+        deviceLowBatteryAlerts = bool("deviceLowBatteryAlerts", true)
+        devicePeekInFullScreen = bool("devicePeekInFullScreen", false)
     }
 
     private func save(_ value: Any?, _ key: String) {

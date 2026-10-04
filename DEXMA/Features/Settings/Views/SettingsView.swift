@@ -151,6 +151,45 @@ struct SettingsView: View {
                 }
             }
 
+            Section {
+                Toggle(isOn: $settings.devicePeekOnConnect) {
+                    Text("Show battery peek on connect")
+                    Text("The notch shows the levels for a few seconds when your Buds connect. Click it to open the Devices tab.")
+                }
+                Toggle(isOn: $settings.deviceLowBatteryAlerts) {
+                    Text("Low battery alerts")
+                    Text("The same peek in red when a bud drops to 20 %, and again at 10 %.")
+                }
+                Toggle(isOn: $settings.devicePeekInFullScreen) {
+                    Text("Show in full screen")
+                    Text("Also peek while a full-screen app is in front.")
+                }
+                LabeledContent {
+                    if viewModel.isBluetoothGranted {
+                        Label("On", systemImage: "checkmark.circle.fill").foregroundStyle(.green)
+                    } else {
+                        Button(viewModel.isBluetoothDenied ? "Allow in Bluetooth Settings…" : "Open Bluetooth Settings…",
+                               action: viewModel.openBluetoothSettings)
+                    }
+                } label: {
+                    Text("Bluetooth")
+                    Text("Needed to read the Buds' battery. Only while they're connected; nothing is ever sent to them.")
+                }
+                ForEach(viewModel.knownDevices) { device in
+                    LabeledContent {
+                        Button("Forget") { viewModel.forget(device) }
+                    } label: {
+                        Text(device.name)
+                        Text([device.model, viewModel.deviceStatus(device)].compactMap { $0 }.joined(separator: " · "))
+                    }
+                }
+            } header: {
+                Text("Devices")
+            } footer: {
+                Text("Forget removes a device and its last levels; it comes back the next time it connects.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+
             Section("Trackpad gesture") {
                 Toggle(isOn: $settings.gesturesEnabled) {
                     Text("Swipe down from the top edge to open")

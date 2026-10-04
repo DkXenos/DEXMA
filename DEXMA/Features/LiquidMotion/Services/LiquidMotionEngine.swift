@@ -31,6 +31,11 @@ final class LiquidMotionEngine {
     private let driver: SpringDriver
     /// The notch's swollen (peek) progress: where the resting warp reaches `peekWarp`.
     var peekProgress: CGFloat = 0.06
+    /// The connect peek's pill grown out of the notch, if any: part of the silhouette.
+    var activity: NotchActivityShape?
+    /// How fast the pill grows or shrinks, in progress units per second (on top of the panel's
+    /// own speed): the jelly and the screen bend follow it like any other motion.
+    var activityVelocity: CGFloat = 0
     private var snapshotRefreshPending = false
     private var lastContentChange: CFTimeInterval = 0
     #if DEBUG
@@ -97,7 +102,7 @@ final class LiquidMotionEngine {
     func step(dt: CFTimeInterval, progress: CGFloat, geometry: NotchGeometry, isOpen: Bool) -> Bool {
         var moving = false
         if effects.isActive {
-            moving = effects.step(dt: dt, velocity: driver.screenVelocity)
+            moving = effects.step(dt: dt, velocity: velocity)
             if !moving, !driver.isSpringing, !driver.isHeld, !debugHoldsMotion {
                 end(isOpen: isOpen)
             }
@@ -105,6 +110,11 @@ final class LiquidMotionEngine {
         let pointerBusy = bender?.step(dt: dt, motion: motion(progress: progress, geometry: geometry)) ?? false
         let bandBusy = band.step(dt: dt)
         return moving || pointerBusy || bandBusy
+    }
+
+    /// The panel's speed on screen plus the pill's.
+    private var velocity: CGFloat {
+        driver.screenVelocity + activityVelocity
     }
 
     /// The panel just reached open or closed at `velocity`: a squash that rings out.
@@ -168,21 +178,21 @@ final class LiquidMotionEngine {
         let resting = restingPush(progress)
         guard effects.isActive || resting > 0 else { return nil }
         guard effects.isActive else {
-            let shape = geometry.shape(at: progress)
+            let shape = geometry.shape(at: progress, activity: activity)
             return SilhouetteMotion(
                 silhouette: CGRect(x: shape.centerX - shape.width / 2, y: 0, width: shape.width, height: shape.height),
                 radius: shape.drawnBottomRadius, strength: 0, direction: 0, restingPush: resting)
         }
         let frame = effects.frame
         let tuning = effects.tuning
-        let shape = frame.silhouette(in: geometry, at: progress).shape
+        let shape = frame.silhouette(in: geometry, at: progress, activity: activity).shape
         let p = min(max(progress, 0), 1)
         let swell = tuning.anticipation > 0 ? frame.bulge / tuning.anticipation : 0
         let strength = min(max(frame.energy * (0.4 + 0.6 * sin(.pi * p)), swell), 1)
         // Smooth sign: a slow overshoot doesn't flip the warp abruptly. Frozen debug poses
         // have no velocity: they show an opening.
         let direction = debugHoldsMotion || swell > frame.energy
-            ? 1 : CGFloat(tanh(Double(driver.screenVelocity) / 0.4))
+            ? 1 : CGFloat(tanh(Double(velocity) / 0.4))
         return SilhouetteMotion(
             silhouette: CGRect(x: shape.centerX - shape.width / 2, y: 0,
                                width: shape.width, height: shape.height),

@@ -112,17 +112,19 @@ enum SwipeTest {
             try? await Task.sleep(for: .milliseconds(300))
 
             // Past the last tab: rubber band, then back.
-            notch.select(.claude)
+            let lastTab = PanelTab.allCases[PanelTab.allCases.count - 1]
+            let lastIndex = CGFloat(PanelTab.allCases.count - 1)
+            notch.select(lastTab)
             _ = await waitForTabs(notch)
             var highest: CGFloat = 0
             await swipe(panel, at: overBand, dx: -card.width * 0.6, steps: 30, dt: 0.01, each: {
                 highest = max(highest, notch.tabProgress)
             })
             _ = await waitForTabs(notch)
-            report(String(format: "past the last tab: highest %.3f (limit +%.2f), back to 2", highest,
-                          notch.gestureTuning.rubberBandLimit),
-                   ok: highest > 2 && highest <= 2 + notch.gestureTuning.rubberBandLimit + 0.001
-                   && notch.tab == .claude && notch.tabProgress == 2, notch)
+            report(String(format: "past the last tab (%@): highest %.3f (limit +%.2f), back to %.0f", lastTab.title,
+                          highest, notch.gestureTuning.rubberBandLimit, lastIndex),
+                   ok: highest > lastIndex && highest <= lastIndex + notch.gestureTuning.rubberBandLimit + 0.001
+                   && notch.tab == lastTab && notch.tabProgress == lastIndex, notch)
             notch.select(.terminal)
             _ = await waitForTabs(notch)
 

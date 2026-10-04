@@ -3,9 +3,19 @@ import AppKit
 
 /// Debug-only launch arguments that check the running app, print what they find and quit:
 /// `-selftest`, `-snapshot <dir>`, `-effecttest <dir>`, `-tabtest <dir>`, `-swipetest <dir>`,
-/// `-hovertest <dir>`, `-capturetest <dir>`,
+/// `-hovertest <dir>`, `-capturetest <dir>`, `-devicetest <dir>`,
 /// `-warptest <dir>`, `-captureidle <s>`.
 enum DebugHarness {
+    private static let flags = ["-selftest", "-captureidle", "-warptest", "-sizetest", "-captureorient", "-capturetest",
+                                "-claudeprobe", "-swipetest", "-bandshot", "-hovertest", "-tabtest", "-effecttest",
+                                "-snapshot", "-devicetest"]
+
+    /// A harness run: the app leaves Bluetooth alone (no permission prompt mid-test);
+    /// `-devicetest` starts the Buds monitor itself.
+    static var isRequested: Bool {
+        ProcessInfo.processInfo.arguments.contains { flags.contains($0) }
+    }
+
     static func runIfRequested(coordinator: AppCoordinator, panel: NotchPanel, notch: NotchViewModel,
                                session: ShellSession) {
         let arguments = ProcessInfo.processInfo.arguments
@@ -39,6 +49,9 @@ enum DebugHarness {
             TabTest.run(panel: panel, notch: notch, session: session, dir: URL(fileURLWithPath: dir))
         } else if let dir = value(after: "-effecttest") {
             EffectTest.run(panel: panel, notch: notch, session: session, dir: URL(fileURLWithPath: dir))
+        } else if let dir = value(after: "-devicetest") {
+            DeviceTest.run(panel: panel, notch: notch, startMonitor: { coordinator.debugStartBudsMonitor() },
+                           dir: URL(fileURLWithPath: dir))
         } else if let dir = value(after: "-snapshot") {
             SnapshotTest.run(panel: panel, notch: notch, session: session, dir: URL(fileURLWithPath: dir))
         }

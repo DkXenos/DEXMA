@@ -3,7 +3,8 @@ import SwiftUI
 /// Right of the notch: the selected tab's context, crossfading with the tab progress (each
 /// tab's context is fully there on its tab, gone a page away). Terminal: the working directory
 /// (and the running dot, see `RunningDotView`); Search: lock, domain, Reset, Open in browser;
-/// Claude: lock, claude.ai, New chat, Open in browser. Only the selected tab's buttons take
+/// Claude: lock, claude.ai, New chat, Open in browser; Devices: the most recent device's levels.
+/// Only the selected tab's buttons take
 /// clicks. The capture controls (`CaptureControls`) keep the end of the region on every tab.
 struct BandContext: View {
     let viewModel: NotchViewModel
@@ -23,6 +24,8 @@ struct BandContext: View {
                         .allowsHitTesting(viewModel.tab == tab)
                 }
             }
+            DevicesContext(summary: viewModel.devices.bandSummary, region: region)
+                .opacity(reveal(.devices, progress))
         }
     }
 
@@ -110,5 +113,24 @@ private struct WebContext: View {
         .buttonStyle(BandButtonStyle(lens: band.lens(for: id), size: Self.buttonSize))
         .disabled(!enabled)
         .help(help)
+    }
+}
+
+/// The most recent device's levels ("Mewo  L 80%  R 75%  Case 40%"), right-aligned, cut short
+/// at the end if they don't fit.
+private struct DevicesContext: View {
+    let summary: String
+    let region: CGRect
+
+    var body: some View {
+        let width = max(region.width - TerminalContextLayout.notchMargin, 0)
+        Text(summary)
+            .font(.system(size: 11))
+            .foregroundStyle(.white.opacity(0.55))
+            .lineLimit(1)
+            .truncationMode(.tail)
+            .frame(width: width, height: region.height, alignment: .trailing)
+            .offset(x: region.maxX - width, y: region.minY)
+            .allowsHitTesting(false)
     }
 }

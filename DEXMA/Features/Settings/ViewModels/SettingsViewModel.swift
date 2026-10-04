@@ -12,17 +12,22 @@ final class SettingsViewModel {
 
     private let accessibility: AccessibilityPermission
     private let screenRecording: ScreenRecordingPermission
+    private let bluetooth: BluetoothPermission
+    /// The Devices tab's devices (Settings → Forget).
+    private let devices: DevicesViewModel
     private let gestures: GestureEngine
     /// The panel's shortcut, then Draw to ask's.
     private let hotKeys: [HotKeyRegistrar]
     @ObservationIgnored private weak var router: (any WindowRouter)?
 
     init(settings: AppSettings, accessibility: AccessibilityPermission,
-         screenRecording: ScreenRecordingPermission, gestures: GestureEngine,
-         hotKeys: [HotKeyRegistrar], router: any WindowRouter) {
+         screenRecording: ScreenRecordingPermission, bluetooth: BluetoothPermission, devices: DevicesViewModel,
+         gestures: GestureEngine, hotKeys: [HotKeyRegistrar], router: any WindowRouter) {
         self.settings = settings
         self.accessibility = accessibility
         self.screenRecording = screenRecording
+        self.bluetooth = bluetooth
+        self.devices = devices
         self.gestures = gestures
         self.hotKeys = hotKeys
         self.router = router
@@ -39,6 +44,14 @@ final class SettingsViewModel {
     var isAccessibilityGranted: Bool { accessibility.isGranted }
     var isScreenRecordingGranted: Bool { screenRecording.isGranted }
     var reducesMotion: Bool { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
+    var isBluetoothGranted: Bool { bluetooth.isGranted }
+    var isBluetoothDenied: Bool { bluetooth.isDenied }
+    /// Every remembered device, connected first.
+    var knownDevices: [Device] { devices.devices }
+
+    func deviceStatus(_ device: Device) -> String { devices.status(device) }
+    func forget(_ device: Device) { devices.forget(device) }
+    func openBluetoothSettings() { bluetooth.openSettings() }
 
     func setLaunchesAtLogin(_ enabled: Bool) {
         LoginItem.setEnabled(enabled)
@@ -61,6 +74,7 @@ final class SettingsViewModel {
     func windowDidOpen() {
         accessibility.startMonitoring()
         screenRecording.startMonitoring()
+        bluetooth.startMonitoring()
         gestures.onTouches = { [weak self] touches in self?.trackpadPreview.touches = touches }
         launchesAtLogin = LoginItem.isEnabled  // The menu bar item may have changed it.
     }
@@ -68,6 +82,7 @@ final class SettingsViewModel {
     func windowWillClose() {
         accessibility.stopMonitoring()
         screenRecording.stopMonitoring()
+        bluetooth.stopMonitoring()
         for hotKey in hotKeys { hotKey.isPaused = false }
         gestures.onTouches = nil
         trackpadPreview.touches = []

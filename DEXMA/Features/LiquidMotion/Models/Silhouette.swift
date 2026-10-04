@@ -9,10 +9,11 @@ struct Silhouette {
 }
 
 extension MotionEffects.Frame {
-    /// The silhouette at `progress` in `geometry` with this frame's squash and stretch, never
-    /// grown past what the panel window can show.
-    func silhouette(in geometry: NotchGeometry, at progress: CGFloat) -> Silhouette {
-        let base = geometry.shape(at: progress)
+    /// The silhouette at `progress` (with `activity`'s pill, if any) in `geometry` with this
+    /// frame's squash and stretch, never grown past what the panel window can show.
+    func silhouette(in geometry: NotchGeometry, at progress: CGFloat,
+                    activity: NotchActivityShape? = nil) -> Silhouette {
+        let base = geometry.shape(at: progress, activity: activity)
         let scale = self.scale(width: base.width, height: base.height, limit: geometry.silhouetteLimit())
         return Silhouette(shape: base.scaled(by: scale), scale: scale)
     }

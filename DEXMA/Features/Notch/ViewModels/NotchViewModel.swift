@@ -5,7 +5,7 @@ import SwiftUI
 /// Single source of truth for the panel: `progress` (0 = notch, 1 = expanded) and state.
 /// The hotkey, the gesture, the pointer and the menu bar item all drive it; views only read it.
 @Observable
-final class NotchViewModel: SwipeTarget, TabSwipeTarget, CaptureHandoffTarget {
+final class NotchViewModel: SwipeTarget, TabSwipeTarget, CaptureHandoffTarget, DeviceActivityTarget {
     static let peekProgress: CGFloat = 0.06
 
     private(set) var progress: CGFloat = 0
@@ -33,6 +33,9 @@ final class NotchViewModel: SwipeTarget, TabSwipeTarget, CaptureHandoffTarget {
     let search: WebTabViewModel
     /// The Claude tab (claude.ai): its card and the band's buttons.
     let claude: WebTabViewModel
+    /// The Devices tab: the batteries (the band's summary) and its page.
+    let devices: DevicesViewModel
+    let devicesPage: DevicesPage
     /// The content card's pages, one per tab.
     let pager: ContentPagerView
     /// The pulsing running dot over the band (at rest; see `showsStaticRunningDot`).
@@ -62,11 +65,14 @@ final class NotchViewModel: SwipeTarget, TabSwipeTarget, CaptureHandoffTarget {
     @ObservationIgnored private var ticksOnLanding = false
 
     init(panel: NotchPanel, session: ShellSession, search: WebTabViewModel, claude: WebTabViewModel,
-         pager: ContentPagerView, runningDot: RunningDotView, urlField: URLEntryField, geometry: NotchGeometry) {
+         devices: DevicesViewModel, devicesPage: DevicesPage, pager: ContentPagerView, runningDot: RunningDotView,
+         urlField: URLEntryField, geometry: NotchGeometry) {
         self.panel = panel
         self.session = session
         self.search = search
         self.claude = claude
+        self.devices = devices
+        self.devicesPage = devicesPage
         self.pager = pager
         self.runningDot = runningDot
         self.urlField = urlField
@@ -95,6 +101,10 @@ final class NotchViewModel: SwipeTarget, TabSwipeTarget, CaptureHandoffTarget {
             guard let self else { return }
             motion.contentDidChange(self.claude.session)
         }
+        devicesPage.onChange = { [weak self] in
+            guard let self else { return }
+            motion.contentDidChange(self.devicesPage)
+        }
         panel.onInput = { [weak self] type in self?.motion.contentReceived(type) }
         panel.onEscape = { [weak self] in self?.handleEscape() ?? false }
         panel.onCloseShortcut = { [weak self] in self?.close() }
@@ -114,7 +124,7 @@ final class NotchViewModel: SwipeTarget, TabSwipeTarget, CaptureHandoffTarget {
         tabDriver.onFrame = { [weak self, weak tabDriver] dt in
             self?.band.stepIndicator(dt: dt, velocity: tabDriver?.screenVelocity ?? 0) ?? false
         }
-        pager.setPages([session.container, search.session.card, claude.session.card])
+        pager.setPages([session.container, search.session.card, claude.session.card, devicesPage.card])
         session.onStatusChange = { [weak self] in self?.updateRunningDot() }
         tabSwipes.target = self
         tabSwipes.start()
@@ -148,7 +158,7 @@ final class NotchViewModel: SwipeTarget, TabSwipeTarget, CaptureHandoffTarget {
     /// The silhouette as drawn this frame: squashed and stretched by the liquid effect
     /// (exactly 1 × 1 at rest).
     var silhouette: Silhouette {
-        effects.frame.silhouette(in: geometry, at: progress)
+        effects.frame.silhouette(in: geometry, at: progress, activity: activityShape)
     }
 
     /// Text fades in once the silhouette is mostly open, so it never floats in a sliver.
@@ -158,7 +168,10 @@ final class NotchViewModel: SwipeTarget, TabSwipeTarget, CaptureHandoffTarget {
 
     /// Where the pointer counts as over the notch (global coordinates); it follows the state.
     var hoverZone: CGRect {
-        geometry.hoverZone(peeking: state == .peek)
+        let zone = geometry.hoverZone(peeking: state == .peek)
+        // The connect peek's pill takes clicks while it's out.
+        guard let activityLayout, activityTarget > 0 else { return zone }
+        return zone.union(geometry.activityRect(size: activityLayout.size))
     }
 
     // MARK: Springs
@@ -185,6 +198,7 @@ final class NotchViewModel: SwipeTarget, TabSwipeTarget, CaptureHandoffTarget {
     }
 
     func open(initialVelocity: CGFloat? = nil, fromGesture: Bool = false) {
+        hideDeviceActivity()
         if state != .open {
             let fromClosed = progress <= Self.peekProgress + 0.01
             moveToOpeningScreenIfClosed()
@@ -228,7 +242,7 @@ final class NotchViewModel: SwipeTarget, TabSwipeTarget, CaptureHandoffTarget {
 
     /// Pointer entered or left the notch.
     func setHovering(_ hovering: Bool) {
-        if hovering, state == .closed, progress < 0.2, !isCapturing {
+        if hovering, state == .closed, progress < 0.2, !isCapturing, hoverPeeks || activity != nil {
             state = .peek
             panel.ignoresMouseEvents = false  // So the click that opens lands on us.
             // The swell is liquid too: a breath, the jelly, and the screen pushed out.
@@ -239,11 +253,15 @@ final class NotchViewModel: SwipeTarget, TabSwipeTarget, CaptureHandoffTarget {
             panel.ignoresMouseEvents = true
             motion.begin()
             driver.animate(to: 0, with: closeSpring)
+            // The pill stayed out while the pointer was on it.
+            if activityExpired { hideDeviceActivity() }
         }
     }
 
     private func handleMouseDown() -> Bool {
         guard state == .peek else { return false }
+        // A click on the connect peek opens on the Devices tab.
+        if activity != nil, activityTarget > 0 { select(.devices) }
         open()
         return true
     }
@@ -256,6 +274,7 @@ final class NotchViewModel: SwipeTarget, TabSwipeTarget, CaptureHandoffTarget {
         switch tab {
         case .terminal: session.isScrolledToBottom && !session.isRunningFullScreenProgram
         case .search, .claude: webTab(tab)?.session.isScrolledToBottom ?? true
+        case .devices: true
         }
     }
 
@@ -314,15 +333,18 @@ final class NotchViewModel: SwipeTarget, TabSwipeTarget, CaptureHandoffTarget {
     func updateGeometry(_ newGeometry: NotchGeometry) {
         guard newGeometry != geometry else { return }
         geometry = newGeometry
+        if let activity { setActivity(activity) }  // The pill's size follows the notch.
         panel.setFrame(newGeometry.panelFrame, display: true)
         session.resize(to: newGeometry.contentFrame.size)
         search.session.resize(to: newGeometry.contentFrame.size)
         claude.session.resize(to: newGeometry.contentFrame.size)
+        devicesPage.resize(to: newGeometry.contentFrame.size)
         pager.resize(to: newGeometry.contentFrame.size)
         // Resized: the cached snapshots no longer fit.
         motion.contentDidChange(session)
         motion.contentDidChange(search.session)
         motion.contentDidChange(claude.session)
+        motion.contentDidChange(devicesPage)
     }
 
     private func moveToOpeningScreenIfClosed() {
@@ -334,10 +356,13 @@ final class NotchViewModel: SwipeTarget, TabSwipeTarget, CaptureHandoffTarget {
 
     /// Every display frame, once the spring has stepped.
     private func stepEffects(_ dt: CFTimeInterval) -> Bool {
+        let activityBusy = stepDeviceActivity(dt)
+        motion.activity = activityShape
+        motion.activityVelocity = activityVelocity * activityVelocityScale
         let wasActive = effects.isActive
         let busy = motion.step(dt: dt, progress: progress, geometry: geometry, isOpen: state == .open)
         if wasActive != effects.isActive { updateRunningDot() }
-        return busy
+        return busy || activityBusy
     }
 
     private func didArrive(at target: CGFloat, velocity: CGFloat) {
@@ -457,7 +482,7 @@ final class NotchViewModel: SwipeTarget, TabSwipeTarget, CaptureHandoffTarget {
         if band.contains(point) { return true }
         guard geometry.contentFrame.contains(point) else { return false }
         switch tab {
-        case .terminal: return true
+        case .terminal, .devices: return true
         // Only where the page can't scroll further sideways itself (most pages never can).
         case .search, .claude: return !(webTab(tab)?.session.canScrollHorizontally(toward: direction) ?? false)
         }
@@ -533,18 +558,23 @@ final class NotchViewModel: SwipeTarget, TabSwipeTarget, CaptureHandoffTarget {
         switch tab {
         case .terminal: panel.makeFirstResponder(session.terminalView)
         case .search, .claude: webTab(tab)?.session.restoreFocus()
+        case .devices: panel.makeFirstResponder(devicesPage.card)
         }
     }
 
     /// What the liquid effect pictures: the selected tab's content.
     private var selectedContent: MotionContent {
-        webTab(tab)?.session ?? session
+        switch tab {
+        case .terminal: session
+        case .search, .claude: webTab(tab)?.session ?? session
+        case .devices: devicesPage
+        }
     }
 
-    /// The web tab's view model for `tab` (nil for the terminal).
+    /// The web tab's view model for `tab` (nil for the terminal and Devices).
     func webTab(_ tab: PanelTab) -> WebTabViewModel? {
         switch tab {
-        case .terminal: nil
+        case .terminal, .devices: nil
         case .search: search
         case .claude: claude
         }
@@ -601,7 +631,7 @@ final class NotchViewModel: SwipeTarget, TabSwipeTarget, CaptureHandoffTarget {
         web.session.restoreFocus()
     }
 
-    /// ⌘1/⌘2/⌘3 pick a tab; ⌘L goes to Search's field, or on Claude opens the URL field;
+    /// ⌘1…⌘4 pick a tab; ⌘L goes to Search's field, or on Claude opens the URL field;
     /// ⌘[ ⌘] ⌘R browse on the web tabs.
     private func handleCommandKey(_ key: String) -> Bool {
         guard state == .open else { return false }
@@ -609,14 +639,15 @@ final class NotchViewModel: SwipeTarget, TabSwipeTarget, CaptureHandoffTarget {
         case "1": select(.terminal)
         case "2": select(.search)
         case "3": select(.claude)
+        case "4": select(.devices)
         case "l" where tab == .claude:
             showURLField()
         case "l":
             select(.search)
             search.session.focusField()
-        case "[" where tab != .terminal: webTab(tab)?.goBack()
-        case "]" where tab != .terminal: webTab(tab)?.goForward()
-        case "r" where tab != .terminal: webTab(tab)?.reloadOrStop()
+        case "[" where webTab(tab) != nil: webTab(tab)?.goBack()
+        case "]" where webTab(tab) != nil: webTab(tab)?.goForward()
+        case "r" where webTab(tab) != nil: webTab(tab)?.reloadOrStop()
         default: return false
         }
         return true
@@ -663,6 +694,7 @@ final class NotchViewModel: SwipeTarget, TabSwipeTarget, CaptureHandoffTarget {
 
     func captureWillBegin() {
         isCapturing = true
+        hideDeviceActivity()
         if state == .open {
             close()
         } else if state == .peek {
@@ -705,6 +737,144 @@ final class NotchViewModel: SwipeTarget, TabSwipeTarget, CaptureHandoffTarget {
 
     func captureChipDidChange() {
         updateRunningDot()
+    }
+
+    // MARK: DeviceActivityTarget (the Devices connect peek)
+
+    /// How long the pill stays out (longer while the pointer is on it).
+    static let activityDuration: TimeInterval = 3
+    private static let activityFont = NSFont.monospacedDigitSystemFont(ofSize: ActivityPillLayout.fontSize,
+                                                                        weight: .semibold)
+    private static let activityCaseFont = NSFont.monospacedDigitSystemFont(ofSize: ActivityPillLayout.secondaryFontSize,
+                                                                            weight: .medium)
+
+    /// The pill's content while it's out (or going back).
+    private(set) var activity: DeviceActivity?
+    private(set) var activityLayout: ActivityPillLayout?
+    /// 0 = just the notch … 1 = the pill out; overshoots with its spring. Stepped on the panel's
+    /// display link with the other motion, so the jelly and the screen bend follow it.
+    private(set) var activityAmount: CGFloat = 0
+    /// The hover peek is on (Settings). The pill takes the pointer either way, to be clicked.
+    @ObservationIgnored var hoverPeeks = true
+    /// The pill came out (true) or is fully back (false): the pointer needs watching meanwhile.
+    @ObservationIgnored var onActivityVisibilityChange: ((Bool) -> Void)?
+    @ObservationIgnored private var activityTarget: CGFloat = 0
+    @ObservationIgnored private var activityVelocity: CGFloat = 0
+    @ObservationIgnored private var activitySpring = Spring()
+    @ObservationIgnored private var activityArrived = true
+    @ObservationIgnored private var activityTimer: DispatchWorkItem?
+    /// Its few seconds are up; it goes back as soon as the pointer isn't on it.
+    @ObservationIgnored private var activityExpired = false
+
+    /// The pill as part of the silhouette (nil when there's none).
+    private var activityShape: NotchActivityShape? {
+        guard let activityLayout, activityAmount != 0 else { return nil }
+        return NotchActivityShape(size: activityLayout.size, amount: activityAmount)
+    }
+
+    /// The pill's content: in fully as it finishes growing, gone as the panel opens past it.
+    var activityContentOpacity: CGFloat {
+        let reveal = smoothstep((activityAmount - 0.45) / 0.45)
+        let panel = 1 - smoothstep((progress - Self.peekProgress) / 0.15)
+        return reveal * panel
+    }
+
+    @discardableResult
+    func showDeviceActivity(_ newActivity: DeviceActivity, allowedInFullScreen: Bool) -> Bool {
+        guard state != .open, !isCapturing else { return false }
+        let appearing = activity == nil || activityTarget == 0
+        // Like opening: on the display it would open on (it moves while invisible).
+        if appearing, state == .closed { moveToOpeningScreenIfClosed() }
+        if !allowedInFullScreen, FullScreenSpace.isActive(onScreenWithFrame: geometry.screenFrame) { return false }
+        setActivity(newActivity)
+        activityExpired = false
+        if appearing {
+            // The swell is liquid like any other: a breath, the jelly, the screen pushed out.
+            if motion.begin() { effects.anticipate() }
+            onActivityVisibilityChange?(true)
+        }
+        animateActivity(to: 1, with: openSpring)
+        activityTimer?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            self.activityExpired = true
+            if self.state != .peek { self.hideDeviceActivity() }
+        }
+        activityTimer = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.activityDuration, execute: work)
+        return true
+    }
+
+    func updateDeviceActivity(_ newActivity: DeviceActivity) {
+        guard let current = activity, current.deviceID == newActivity.deviceID, activityTarget > 0 else { return }
+        var updated = newActivity
+        updated.isAlert = current.isAlert || newActivity.isAlert
+        setActivity(updated)
+    }
+
+    /// The pill goes back into the notch (time's up, the panel opens, a capture starts).
+    func hideDeviceActivity() {
+        activityTimer?.cancel()
+        activityTimer = nil
+        guard activity != nil, activityTarget != 0 else { return }
+        motion.begin()
+        animateActivity(to: 0, with: closeSpring)
+    }
+
+    private func setActivity(_ newActivity: DeviceActivity) {
+        if activity != newActivity { activity = newActivity }
+        let layout = layoutForActivity(newActivity)
+        if activityLayout != layout { activityLayout = layout }
+    }
+
+    private func layoutForActivity(_ activity: DeviceActivity) -> ActivityPillLayout {
+        let main = (activity.mainText as NSString).size(withAttributes: [.font: Self.activityFont]).width
+        let other = ((activity.casePart?.text ?? "") as NSString).size(withAttributes: [.font: Self.activityCaseFont]).width
+        let width = max(main, other)
+        let notch = CGRect(x: geometry.notchRect.minX - geometry.panelFrame.minX, y: 0,
+                           width: geometry.notchRect.width, height: geometry.notchRect.height)
+        return ActivityPillLayout(notch: notch, textWidth: width, maxWidth: geometry.silhouetteLimit().width)
+    }
+
+    private func animateActivity(to target: CGFloat, with spring: Spring) {
+        activityTarget = target
+        activitySpring = spring
+        activityArrived = abs(target - activityAmount) < 0.02
+        driver.wake()
+    }
+
+    /// The pill's speed as panel progress, for the jelly: its growth in width over the panel's.
+    private var activityVelocityScale: CGFloat {
+        let travel = geometry.expandedSize.width - geometry.notchRect.width
+        guard travel > 0, let activityLayout else { return 0 }
+        return (activityLayout.size.width - geometry.notchRect.width) / travel
+    }
+
+    /// One display frame of the pill's spring. Returns whether it still needs frames.
+    private func stepDeviceActivity(_ dt: CFTimeInterval) -> Bool {
+        guard activity != nil else { return false }
+        guard activityAmount != activityTarget || activityVelocity != 0 else { return false }
+        var value = activityAmount
+        var velocity = activityVelocity
+        let before = value - activityTarget
+        activitySpring.update(value: &value, velocity: &velocity, target: activityTarget, deltaTime: dt)
+        if !activityArrived, before * (value - activityTarget) <= 0 || abs(value - activityTarget) < 0.004 {
+            activityArrived = true
+            // Out: the same landing squash as the panel's.
+            if activityTarget == 1 { motion.land(velocity: velocity * activityVelocityScale) }
+        }
+        if abs(value - activityTarget) < 0.0005, abs(velocity) < 0.01 {
+            value = activityTarget
+            velocity = 0
+        }
+        activityVelocity = velocity
+        activityAmount = value
+        guard value == 0, activityTarget == 0, velocity == 0 else { return value != activityTarget || velocity != 0 }
+        activity = nil
+        activityLayout = nil
+        activityExpired = false
+        onActivityVisibilityChange?(false)
+        return false
     }
 
     // MARK: Debug

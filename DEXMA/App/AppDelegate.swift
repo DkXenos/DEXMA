@@ -13,6 +13,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         coordinator.screenParametersDidChange()
     }
 
+    func applicationWillTerminate(_ notification: Notification) {
+        coordinator.willTerminate()
+    }
+
     func applicationSupportsSecureRestorableState(_ app: NSApplication) -> Bool {
         true
     }

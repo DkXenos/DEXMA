@@ -4,6 +4,10 @@ import AppKit
 final class StatusItemController: NSObject, NSMenuDelegate {
     private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
     private let viewModel: MenuBarViewModel
+    #if DEBUG
+    /// Debug builds' extra items (the Mock devices menu), above Quit.
+    var debugItems: (() -> [NSMenuItem])?
+    #endif
 
     init(viewModel: MenuBarViewModel) {
         self.viewModel = viewModel
@@ -31,6 +35,12 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         let login = item("Launch at Login", #selector(MenuBarViewModel.toggleLaunchAtLogin))
         login.state = viewModel.launchesAtLogin ? .on : .off
         menu.addItem(login)
+        #if DEBUG
+        if let debugItems {
+            menu.addItem(.separator())
+            debugItems().forEach(menu.addItem)
+        }
+        #endif
         menu.addItem(.separator())
         menu.addItem(item("Quit DEXMA", #selector(MenuBarViewModel.quit), key: "q"))
     }

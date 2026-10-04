@@ -86,6 +86,39 @@ struct NotchGeometry: Equatable {
             centerX: notchCenterXInPanel)
     }
 
+    /// The activity pill's bottom corners and its flare into the screen edge.
+    static let activityRadius: CGFloat = 20
+    static let activityEarRadius: CGFloat = 8
+
+    /// The silhouette at `progress` with `activity`'s pill grown out of it (the connect peek).
+    /// The pill shows wherever it's bigger than the panel's own shape, so opening from it grows
+    /// smoothly out of the pill; its rounder corners hand over to the panel's within 8 pt of
+    /// height, so nothing jumps either way. Without an activity (or at amount 0) it's exactly
+    /// `shape(at:)`.
+    func shape(at progress: CGFloat, activity: NotchActivityShape?) -> NotchShape {
+        let base = shape(at: progress)
+        guard let activity, activity.amount > 0 else { return base }
+        let a = activity.amount
+        let limit = silhouetteLimit()
+        let width = lerp(notchRect.width, activity.size.width, a)
+        let height = lerp(notchRect.height, activity.size.height, a)
+        // How much the pill, rather than the panel, decides the outline.
+        let lead = min(max(0.5 + (height - base.height) / 16, 0), 1)
+        let pillRadius = max(base.bottomRadius, lerp(base.bottomRadius, Self.activityRadius, min(a, 1)))
+        return NotchShape(
+            width: min(max(base.width, width), max(limit.width, base.width)),
+            height: min(max(base.height, height), max(limit.height, base.height)),
+            bottomRadius: lerp(base.bottomRadius, pillRadius, lead),
+            earRadius: max(base.earRadius, Self.activityEarRadius * min(a, 1) * lead),
+            centerX: base.centerX)
+    }
+
+    /// The activity pill on screen (global coordinates), for the pointer.
+    func activityRect(size: CGSize) -> CGRect {
+        CGRect(x: notchRect.midX - size.width / 2, y: screenFrame.maxY - size.height,
+               width: size.width, height: size.height)
+    }
+
     /// Past fully open (spring overshoot after a fast flick), growth eases into the room the
     /// window has instead of running past its edge, where it would be cut off in a straight
     /// line. Small overshoots are unchanged (tanh x ≈ x); at or below `size`, nothing changes.
