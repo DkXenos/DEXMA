@@ -41,6 +41,21 @@ enum GlassTest {
                                   backdrop: Backdrop(screen: screen), field: layout.onScreen(layout.field),
                                   card: layout.onScreen(layout.card))
             measurements(context)
+            if ProcessInfo.processInfo.arguments.contains("-glasssendimage") {
+                await realSendWithImage(context)
+                context.backdrop.hide()
+                try? lines.joined(separator: "\n").write(to: dir.appendingPathComponent("report.txt"), atomically: true, encoding: .utf8)
+                NSApp.terminate(nil)
+                return
+            }
+            if ProcessInfo.processInfo.arguments.contains("-glassattach") {
+                await attachCheck(context)
+                return
+            }
+            if ProcessInfo.processInfo.arguments.contains("-glassrecord") {
+                await record(context)
+                return
+            }
             if ProcessInfo.processInfo.arguments.contains("-glassfallback") {
                 await fallbackLook(context)
                 return
@@ -142,6 +157,237 @@ enum GlassTest {
         await waitForLoad(c.web)
     }
 
+    /// `-glassattach`: who has the keyboard right after presenting (a timeline), then a picture
+    /// attached the way Send does it (expand, the page in the window, `ClaudeAttacher`) with
+    /// claude.ai's composer hidden (native), and again with it shown: does the attachment reach
+    /// the composer? Nothing is sent; the attachments and the draft are removed after.
+    @MainActor private static func attachCheck(_ c: Context) async {
+        let glass = c.glass
+        if c.web.url?.path != "/new" {
+            glass.claude.newChat()
+            await waitForLoad(c.web)
+        }
+        c.backdrop.show(Backdrop.dark)
+        try? await Task.sleep(for: .milliseconds(400))
+        let begin = CACurrentMediaTime()
+        glass.present(on: c.screen, compact: true)
+        var timeline: [String] = []
+        for wait in [0, 10, 30, 60, 120, 250, 500, 900] {
+            let target = begin + Double(wait) / 1000
+            let now = CACurrentMediaTime()
+            if target > now { try? await Task.sleep(for: .milliseconds(Int((target - now) * 1000))) }
+            timeline.append("+\(wait): \(c.panel.firstResponder.map { "\(type(of: $0))" } ?? "nil")")
+        }
+        log("first responder after present: " + timeline.joined(separator: ", "))
+        let active = (try? await c.web.evaluateJavaScript(
+            "document.activeElement ? document.activeElement.tagName + '.' + (document.activeElement.dataset.testid || '') : '-'") as? String) ?? "-"
+        log("page's active element: \(active), page has focus: \((try? await c.web.evaluateJavaScript("document.hasFocus()") as? Bool) ?? false)")
+
+        // The page's state over time as the card opens (it showed blank).
+        glass.dismiss()
+        try? await Task.sleep(for: .milliseconds(600))
+        glass.claude.session.load(URL(string: "https://claude.ai/chat/a530c099-e596-4535-a4ec-9a28824ba5c1")!)
+        await waitForLoad(c.web)
+        let card = glass.webCard
+        let start = CACurrentMediaTime()
+        glass.present(on: c.screen)
+        for wait in [0, 30, 100, 200, 400, 800, 1500] {
+            let target = start + Double(wait) / 1000
+            let now = CACurrentMediaTime()
+            if target > now { try? await Task.sleep(for: .milliseconds(Int((target - now) * 1000))) }
+            let page = card.page
+            log(String(format: "+%d: expanded %@, card frame %@ in window %@, layer opacity %.2f (presentation %.2f), parked %@, page frame %@, page hidden %@, web alpha %.1f, web hidden %@, web window %@",
+                       wait, "\(glass.isExpanded)", NSStringFromRect(card.frame), "\(card.window != nil)", card.layer?.opacity ?? -1,
+                       card.layer?.presentation()?.opacity ?? -1, "\(card.isParked)", NSStringFromRect(page?.frame ?? .zero),
+                       "\(page?.isHidden ?? true)", c.web.alphaValue, "\(c.web.isHidden)", "\(c.web.window != nil)"))
+        }
+        await shoot(c, rect: c.field.union(c.card).insetBy(dx: -24, dy: -24), name: "state-open")
+
+        let image = testImage()
+        for native in [true, false] {
+            glass.debugComposer.apply(clear: true, native: native)
+            glass.expand()
+            try? await Task.sleep(for: .milliseconds(500))
+            let before = (try? await c.web.evaluateJavaScript(attachmentScript) as? Int) ?? -1
+            let method = await glass.debugComposer.attacher.insert(image, in: c.panel)
+            try? await Task.sleep(for: .milliseconds(1500))
+            let after = (try? await c.web.evaluateJavaScript(attachmentScript) as? Int) ?? -1
+            let send = (try? await c.web.evaluateJavaScript(
+                "(function(){var b=document.querySelector('[data-testid=\"chat-input-send\"]'); return b ? (b.disabled ? 'disabled' : 'enabled') : 'missing';})()") as? String) ?? "-"
+            check("attach with the composer \(native ? "hidden (native)" : "shown"): method \(method.map(\.rawValue) ?? "none"), "
+                  + "attachments \(before) → \(after), send button \(send)", method != nil && after > before)
+            await shoot(c, rect: c.field.union(c.card).insetBy(dx: -24, dy: -24), name: "attach-\(native ? "native" : "shown")")
+            _ = try? await c.web.evaluateJavaScript(removeAttachmentsScript)
+            _ = await glass.debugComposer.insert("")
+            try? await Task.sleep(for: .seconds(2))
+        }
+        glass.debugComposer.apply(clear: true, native: true)
+        glass.dismiss()
+        try? await Task.sleep(for: .milliseconds(500))
+        c.backdrop.hide()
+        try? lines.joined(separator: "\n").write(to: c.dir.appendingPathComponent("report.txt"), atomically: true, encoding: .utf8)
+        NSApp.terminate(nil)
+    }
+
+    /// `-glasssendimage`: the user's flow for real — Draw to ask (a stand-in frozen screen whose
+    /// selection is half red, half blue) → the chip → the question typed into the field with key
+    /// events → Return. Sends one message; checks it went with the picture (Claude names the
+    /// colours).
+    @MainActor private static func realSendWithImage(_ c: Context) async {
+        let glass = c.glass
+        glass.claude.newChat()
+        await waitForLoad(c.web)
+        try? await Task.sleep(for: .seconds(1))
+        c.backdrop.show(Backdrop.dark)
+        // A frozen screen: red left, blue right, around the middle.
+        let size = c.screen.frame.size
+        let scale = c.screen.backingScaleFactor
+        let context = CGContext(data: nil, width: Int(size.width * scale), height: Int(size.height * scale), bitsPerComponent: 8,
+                                bytesPerRow: 0, space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                                bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue)!
+        context.setFillColor(CGColor(red: 0.85, green: 0.1, blue: 0.1, alpha: 1))
+        context.fill(CGRect(x: 0, y: 0, width: size.width * scale / 2, height: size.height * scale))
+        context.setFillColor(CGColor(red: 0.1, green: 0.2, blue: 0.9, alpha: 1))
+        context.fill(CGRect(x: size.width * scale / 2, y: 0, width: size.width * scale / 2, height: size.height * scale))
+        let frozen = FrozenScreen(image: context.makeImage()!, size: size, windows: [])
+        c.capture.debugBegin(on: c.screen, frozen: frozen, delay: 0.05)
+        try? await Task.sleep(for: .milliseconds(500))
+        let overlay = c.capture.debugPanel
+        let mid = CGPoint(x: size.width / 2, y: size.height / 2)
+        let stroke: [CGPoint] = stride(from: 0.0, through: 1.0, by: 0.05).map { (t: Double) -> CGPoint in
+            CGPoint(x: mid.x - 150 + 300 * t, y: mid.y - 80 + 160 * t)
+        }
+        mouse(.leftMouseDown, stroke[0], to: overlay)
+        for point in stroke.dropFirst() { mouse(.leftMouseDragged, point, to: overlay) }
+        mouse(.leftMouseUp, stroke[stroke.count - 1], to: overlay)
+        for _ in 0..<80 {
+            try? await Task.sleep(for: .milliseconds(50))
+            if c.capture.phase == .idle, glass.isPresented { break }
+        }
+        try? await Task.sleep(for: .milliseconds(800))  // Long enough for claude.ai to grab focus, if it could.
+        check("capture → chip, the field has the keyboard (\(c.panel.firstResponder.map { "\(type(of: $0))" } ?? "nil"))",
+              glass.attachment != nil && c.panel.firstResponder === glass.textView)
+        // Typed, key by key, like the user.
+        for character in "What two colours are in this picture? Answer in two words." {
+            key(0, flags: [], characters: String(character), to: c.panel)
+        }
+        try? await Task.sleep(for: .milliseconds(200))
+        check("the typed question is in the native field (\(glass.textView.string.count) characters)",
+              glass.textView.string.hasPrefix("What two colours"))
+        key(kVK_Return, flags: [], characters: "\r", to: c.panel)
+        try? await Task.sleep(for: .milliseconds(300))
+        for _ in 0..<400 where glass.isSending { try? await Task.sleep(for: .milliseconds(100)) }
+        check("sent from the field (cleared), chip gone, still native, on \(c.web.url?.path ?? "-")",
+              glass.textView.string.isEmpty && glass.attachment == nil && glass.debugIsNativeComposer
+                && c.web.url?.path.hasPrefix("/chat/") == true)
+        var reply = ""
+        for _ in 0..<40 {
+            try? await Task.sleep(for: .milliseconds(500))
+            reply = (try? await c.web.evaluateJavaScript("""
+                (function(){var r=document.querySelectorAll('.font-claude-response, .font-claude-message, [data-is-streaming]');
+                 if (r.length) return r[r.length-1].innerText;
+                 var users=document.querySelectorAll('[data-testid="user-message"]');
+                 var main=document.querySelector('main'); return main ? main.innerText.slice(-200) : '';})()
+                """) as? String) ?? ""
+            if reply.lowercased().contains("red"), reply.lowercased().contains("blue") { break }
+        }
+        let images = (try? await c.web.evaluateJavaScript(
+            "document.querySelectorAll('img[src^=\"blob:\"], img[src*=\"/files/\"], img[src*=\"preview\"]').length") as? Int) ?? 0
+        check("Claude got the picture: reply \"\(reply.trimmingCharacters(in: .whitespacesAndNewlines).prefix(60))\", \(images) image(s) in the chat",
+              reply.lowercased().contains("red") && reply.lowercased().contains("blue"))
+        await shoot(c, rect: c.field.union(c.card).insetBy(dx: -24, dy: -24), name: "sent-with-image")
+        glass.dismiss()
+        try? await Task.sleep(for: .milliseconds(500))
+    }
+
+    /// Pictures in claude.ai's composer (its attachment thumbnails), outside the editor itself.
+    private static let attachmentScript = """
+        (function () {
+          var editor = document.querySelector('[data-testid="chat-input"]');
+          if (!editor) return -1;
+          var root = editor.closest('fieldset') || editor.parentElement;
+          return Array.from(root.querySelectorAll('img, [data-testid*="thumbnail"], [data-testid*="attachment"], button[aria-label^="Remove"]'))
+            .filter(function (n) { return !editor.contains(n); }).length;
+        })();
+        """
+    private static let removeAttachmentsScript = """
+        (function () {
+          var editor = document.querySelector('[data-testid="chat-input"]');
+          var root = editor && (editor.closest('fieldset') || editor.parentElement);
+          if (!root) return 0;
+          var buttons = root.querySelectorAll('button[aria-label^="Remove"]');
+          buttons.forEach(function (b) { b.click(); });
+          return buttons.length;
+        })();
+        """
+
+    /// A small picture standing in for a capture: two colours and a label.
+    private static func testImage() -> CapturedImage {
+        let width = 240, height = 140
+        let context = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
+                                space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                                bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue)!
+        context.setFillColor(CGColor(red: 0.9, green: 0.3, blue: 0.2, alpha: 1))
+        context.fill(CGRect(x: 0, y: 0, width: width / 2, height: height))
+        context.setFillColor(CGColor(red: 0.2, green: 0.4, blue: 0.9, alpha: 1))
+        context.fill(CGRect(x: width / 2, y: 0, width: width / 2, height: height))
+        let picture = context.makeImage()!
+        return CapturedImage(png: CaptureEncoder.png(picture)!, thumbnail: picture,
+                             pixelSize: CGSize(width: width, height: height))
+    }
+
+    /// `-glassrecord`: the real screen frame by frame (ScreenCaptureKit, the display's pace) while
+    /// the glass comes and goes over a conversation (`-glassconversation <url>`, else the page
+    /// that's open): present, dismiss, present, collapse, expand, dismiss. Frames go to
+    /// `<dir>/<step>/NNN.png` (1 px per point), with each frame's time since the step began.
+    @MainActor private static func record(_ c: Context) async {
+        let arguments = ProcessInfo.processInfo.arguments
+        if let index = arguments.firstIndex(of: "-glassconversation"), index + 1 < arguments.count,
+           let url = URL(string: arguments[index + 1]) {
+            c.glass.claude.session.load(url)
+            await waitForLoad(c.web)
+        }
+        c.backdrop.show(Backdrop.dark)
+        try? await Task.sleep(for: .milliseconds(600))
+        let area = c.field.union(c.card).union(c.glass.glass.layout.onScreen(c.glass.glass.layout.buttons.last ?? .zero))
+            .insetBy(dx: -24, dy: -24)
+        let recorder = FrameRecorder()
+        guard await recorder.start(screen: c.screen, rect: area) else {
+            log("record: no stream (Screen Recording? launch with open)")
+            return
+        }
+        let steps: [(String, @MainActor () -> Void, Double)] = [
+            ("1-present", { c.glass.present(on: c.screen) }, 1.2),
+            ("2-dismiss", { c.glass.dismiss() }, 1.0),
+            ("3-present", { c.glass.present(on: c.screen) }, 1.2),
+            ("4-collapse", { c.glass.collapse() }, 1.0),
+            ("5-expand", { c.glass.expand() }, 1.2),
+            ("6-dismiss", { c.glass.dismiss() }, 1.0),
+        ]
+        for (name, action, seconds) in steps {
+            try? await Task.sleep(for: .milliseconds(300))
+            recorder.clear()
+            let begin = CACurrentMediaTime()
+            action()
+            try? await Task.sleep(for: .seconds(seconds))
+            let frames = await recorder.stop()
+            _ = await recorder.start(screen: c.screen, rect: area)
+            let folder = c.dir.appendingPathComponent(name)
+            try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            var times: [String] = []
+            for (index, frame) in frames.enumerated() {
+                DebugImages.write(frame.1, folder, String(format: "%03d", index))
+                times.append(String(format: "%03d %.0f", index, (frame.0 - begin) * 1000))
+            }
+            try? times.joined(separator: "\n").write(to: folder.appendingPathComponent("times.txt"), atomically: true, encoding: .utf8)
+            log("record \(name): \(frames.count) frames over \(Int(seconds * 1000)) ms")
+        }
+        _ = await recorder.stop()
+        c.backdrop.hide()
+        try? lines.joined(separator: "\n").write(to: c.dir.appendingPathComponent("report.txt"), atomically: true, encoding: .utf8)
+        NSApp.terminate(nil)
+    }
+
     /// The pre-macOS 26 look (the popover material), forced on 26: compact and expanded, light and dark.
     @MainActor private static func fallbackLook(_ c: Context) async {
         GlassFallback.isForced = true
@@ -189,6 +435,11 @@ enum GlassTest {
             let collapseBegin = CACurrentMediaTime()
             c.glass.collapse()
             log(String(format: "  collapse() call: %.1f ms", (CACurrentMediaTime() - collapseBegin) * 1000))
+            defer {
+                for pass in probe.longPasses where pass.0 + pass.1 > collapseBegin - 0.001 && pass.0 < collapseBegin + 0.7 {
+                    log(String(format: "    collapse: long pass from %+.0f ms, %.0f ms", (pass.0 - collapseBegin) * 1000, pass.1 * 1000))
+                }
+            }
             if round == 3 {
                 // Where its long pass falls: the fade's end is at 120 ms, the card's removal right after.
                 let start = CACurrentMediaTime()
@@ -204,6 +455,11 @@ enum GlassTest {
             c.glass.dismiss()
             log(String(format: "  dismiss() call: %.1f ms", (CACurrentMediaTime() - dismissBegin) * 1000))
             try? await Task.sleep(for: .milliseconds(600))
+            let focusReturn = c.glass.glass.debugFocusReturn
+            log(String(format: "    focus return at +%.0f ms, %.1f ms", (focusReturn.0 - dismissBegin) * 1000, focusReturn.1 * 1000))
+            for pass in probe.longPasses where pass.0 + pass.1 > dismissBegin - 0.001 && pass.0 < dismissBegin + 0.6 {
+                log(String(format: "    long pass from %+.0f ms, %.0f ms", (pass.0 - dismissBegin) * 1000, pass.1 * 1000))
+            }
         }
         probe.mark("end")
         for line in probe.summary() { log(line) }
@@ -317,7 +573,8 @@ enum GlassTest {
             if c.capture.phase == .idle, glass.isPresented { break }
         }
         try? await Task.sleep(for: .milliseconds(700))
-        check("capture: glass up, compact, chip attached, field focused, overlay gone",
+        check("capture: glass up (\(glass.isPresented)), compact (\(!glass.isExpanded)), chip attached (\(glass.attachment != nil)), "
+              + "field focused (\(c.panel.firstResponder.map { "\(type(of: $0))" } ?? "nil")), overlay gone (\(!overlay.isVisible))",
               glass.isPresented && !glass.isExpanded && glass.attachment != nil
                 && c.panel.firstResponder === glass.textView && !overlay.isVisible)
         c.backdrop.show(Backdrop.dark)
@@ -371,7 +628,7 @@ enum GlassTest {
         c.glass.present(on: c.screen)
         try? await Task.sleep(for: .milliseconds(700))
         check("setting on again: the card is in the glass, the glass comes up",
-              card.window === c.panel && c.glass.isPresented && !card.drawsCardBackground)
+              card.superview === c.glass.webCard && card.window === c.panel && c.glass.isPresented && !card.drawsCardBackground)
         c.glass.dismiss()
         try? await Task.sleep(for: .milliseconds(600))
     }

@@ -121,6 +121,7 @@ Layers — keep them separated:
   Models: `TerminalSnapshot` (pixel-exact picture of the live terminal), `ShellStatus`,
   `PathAbbreviation` (`~`, middle truncation; pure).
 - `WebTab/` — the shared web tab (see *WebTab*): `WebTab` (Service), `WebTabView`,
+  `KeyboardGuardedWebView` (its web views: can be kept from taking the keyboard by itself),
   `WebPopupController` (sign-in popups), `WebDownloads`, `WebTabViewModel`; Models
   `WebTabConfiguration` (`.search`, `.claude`), `WebNavigationPolicy`, `CSSColor`.
 - `Search/` — Model: `SearchQuery` (text → Google search or address, pure); the tab itself is
@@ -199,7 +200,8 @@ Layers — keep them separated:
   material before), `VisualEffectMaterial`, `FloatingGlassContentView`, Model `GlassLayout` (pure).
   Claude: `ClaudeGlassViewModel` (field, chip, send, card, keys; `ClaudeTabRedirect` +
   `CaptureHandoffTarget`), Views `ClaudeGlassView`, `GlassTextView` (NSTextView: Spotlight's
-  type, Return/⇧Return), `GlassInputField`, `GlassWebCard` (claude.ai's card above the glass),
+  type, Return/⇧Return), `GlassInputField`, `GlassWebCard` + `GlassPage` (claude.ai's card on the
+  glass card, always in the window, faded on its layer, parked when closed),
   Service `ClaudeComposer` (page style script, typing, sending, verifying), Models `GlassMetrics`
   (every measured number), `ClaudePageKind`, `GlassInputMode`.
 
@@ -470,12 +472,27 @@ Dismiss: Esc, a click outside (losing key, unless claude.ai's sign-in popup took
 the window's empty area too), ⌘W, the shortcut again; the keyboard goes back (`FocusHandoff`) on
 the next run-loop turn. ⌘C/V/X/A/Z routed like the notch's, ⌘Q swallowed.
 
-**Card and page:** the Claude tab's own `WebTab` card (same web view, session, cookies) moves from
-the notch's pager into `GlassWebCard`, an AppKit overlay above the SwiftUI glass at the card's
-frame (a web view can't live inside a glass effect; never re-parented or resized while morphing);
-it fades in after the card has grown, out before it shrinks, and is hidden only once the
-animation is over (hiding a web view costs WebKit ~25 ms on the main thread). The notch gets
-`RedirectedTabPage` in Claude's slot. See-through: the web view's background off —
+**Card and page** (reworked 2026-10-05 after the user saw leftovers and lag on hiding; every step
+recorded frame by frame with `-glasstest -glassrecord`): the Claude tab's own `WebTab` card (same
+web view, session, cookies) moves from the notch's pager into `GlassWebCard`, hosted by SwiftUI
+(`GlassPage`) *above* the glass container at the card's place, with the same 0.96 → 1 scale about
+the same anchor (the field row has a constant width so the anchor never moves). Why each part:
+- As an AppKit overlay with its own 0.12 s fade (first version) the page outlived the glass on
+  hiding (the system's glass dissolves in ~40 ms, whatever the animation's length) and came in
+  ~150 ms after the empty card on showing.
+- Inside the glass card (as its content) it moved with the glass perfectly, but inserting the card
+  attached the web view to the window each time: WebKit spent 40–95 ms of main thread on that
+  (the card's first frames waited).
+- Inside the `GlassEffectContainer` as a sibling, the container drew the glass *over* it (the page
+  only showed blurred through its card); SwiftUI `.opacity`/`.blur` on the web view left its
+  remote content blank or soft.
+So: the page never leaves the window; it fades on its own layer (`GlassWebCard.setVisible`),
+timed to the measured glass transitions (`ClaudeGlassViewModel.PageFade`): in 30 ms after the
+glass appears (it shows ~2 frames after the state change), over 0.15 s; with the card growing,
+in at 0.1 s over 0.18 s; out over 0.09 s, from the first frame. Closed and at rest it's parked
+outside the card's bounds (no pointer, cursor or hover; moving it costs nothing, hiding it costs
+WebKit ~25 ms). Hiding uses `.easeOut(0.16)` (a spring's tail left a faint ghost of the glass).
+The notch gets `RedirectedTabPage` in Claude's slot. See-through: the web view's background off —
 **`drawsBackground` is private** (KVC → `_setDrawsBackground:`, only if WebKit responds to it;
 public `underPageBackgroundColor = .clear` covers only the overscroll area) — and a user script
 (`ClaudeComposer.pageScript`, document start) tags with data attributes and clears: `html`,
@@ -485,6 +502,16 @@ sticky/fixed or pinned at the top, and `.df-header-backdrop` (the conversation's
 dark mode, white in light) under the page keeps text legible on bright wallpapers. The page and
 the glass follow the system's appearance (the notch keeps forcing dark). See-through off: the
 card paints the page's own colour inside the glass.
+
+**The keyboard:** claude.ai focuses its message box whenever its window becomes key, and WebKit
+then takes first responder (~120 ms after the glass appeared): what the user typed went into
+claude.ai's *hidden* box and Return sent it from there, without the chip's picture (the user's
+report, 2026-10-05). So in glass the web view is a `KeyboardGuardedWebView` with
+`takesKeyboardByItself` off (only a click into it or `WebTab.focusPage()` — the paste, the
+fallback — gives it the keyboard; the notch: unchanged), and the page script blurs the hidden
+composer when it's focused by anything but DEXMA's scripts (`window.__dexmaFocusOK`, set while
+sending). Verified: the field keeps the keyboard from +30 ms on; a picture + a typed question sent
+together (`-glasstest -glasssendimage`: Claude answered "Red, blue.").
 
 **Sending** (Return in the native field; ⇧Return a new line, up to 5 lines then it scrolls):
 claude.ai's composer (`[data-testid=chat-input]` in a fieldset, TipTap/ProseMirror) is moved out of
@@ -510,15 +537,18 @@ page (`ClaudePageKind`); ⌘↓/⌘↑ open/close it; New chat (⌘⇧R) loads /
 browser (⌘⇧O) hides the glass; ⌘L turns the field into a link field (Esc back); ⌘R, ⌘[, ⌘].
 
 **Motion:** present = shapes inserted with the system glass transitions inside a 0.96 → 1
-`scaleEffect` on `.spring(duration: 0.3, bounce: 0.12)`, the buttons a beat (0.07 s) later
-(morphing out of the field); card `.spring(duration: 0.38, bounce: 0.12)`; Reduce Motion: 0.18 s
-ease, no scale, no stagger. No Metal distortion on the glass (it stays the notch's). The glass is
-built and drawn once at launch, invisibly (`warmUp`).
-**Measured** (`-glasstest`, Debug, 120 Hz, a display link on a window that stays on screen):
-expand 0 late frames; present, collapse and dismiss at most one missed vsync (worst 16.7–20.8 ms,
-like the notch's 0–1 noise), no main-thread pass over 20 ms in any of them; `present()` 1.5–8 ms,
-`dismiss()` 5–7 ms. Before the fixes: first present 26 ms (no warm-up), collapse 25 ms (web view
-hidden mid-animation), dismiss 22 ms (focus return in the animation's first pass).
+`scaleEffect` on `.spring(duration: 0.3, bounce: 0.12)`, the buttons 0.03 s later on a quicker
+spring (0.22 s; 0.07 s + 0.3 s read as lag: blobs oozing out of the field); card
+`.spring(duration: 0.28, bounce: 0)`; hiding `.easeOut(0.16)`; Reduce Motion: short eases, no
+scale, no stagger. No Metal distortion on the glass (it stays the notch's). The glass is built and
+drawn once at launch, invisibly (`warmUp`).
+**Measured** (`-glasstest`, Debug; the pointer's display ran at ~144 Hz in the last runs): expand
+and present at most one missed frame, no main-thread pass over 20 ms (expand: was 40–95 ms with the
+page inside the card); the pass that starts a dismiss 21–25 ms (SwiftUI setting up the four glass
+shapes' removal: 1–2 frames at its very start); `present()` 3–10 ms, `dismiss()` 0.2 ms, the
+keyboard hand-back 5–7 ms on the next run-loop turn. Recordings (ScreenCaptureKit at the display's
+pace, `FrameRecorder`): hiding, page and glass gone together by ~88 ms; showing, page and glass in
+the same frame.
 
 ## Animation model
 - `progress` is always the on-screen (presentation) value. `SpringDriver` steps it each
@@ -948,6 +978,9 @@ radio) and prints the model and status channel (launch with `open -n <app> --std
 `-devicetest <dir>` checks the Devices tab and the connect peek with mock Buds (launch it with
 `open -n <app> --stdout <dir>/out.txt --args -devicetest <dir>`, read out.txt + PNGs); it also
 starts the real Buds monitor once (other harness runs never touch Bluetooth).
+`-glasstest <dir> -glassrecord` records the glass coming and going frame by frame (`FrameRecorder`,
+PNGs + times per step); `-glassattach` logs who has the keyboard after presenting and attaches a
+picture the way Send does (nothing sent); `-glasssendimage` sends a picture + a typed question.
 `-glasstest <dir>` checks Claude in floating glass (launch with `open -n <app> --stdout <dir>/out.txt
 --args -glasstest <dir>`, ~3 min; covers the screen with a stand-in wallpaper window, uses the
 claude.ai session but sends nothing): looks, pacing, keys, the composer, the fallback, the capture
@@ -1087,6 +1120,17 @@ and never quits (wrap runs in a watchdog).
   (→ `_setDrawsBackground:`), guarded with `responds(to:)`.
 - A Debug build isn't trusted for Accessibility (CGEvent posting fails); `osascript` from the shell
   (the editor's grant) can press keys; DEXMA's Screen Recording grant still works for Debug.
+- `GlassEffectContainer` draws its glass over plain (non-glass) views inside it: content meant to
+  lie *on* a glass shape must be that shape's own content or sit outside the container.
+- SwiftUI's glass transitions don't follow the animation's duration: the materialize-in shows ~2
+  frames after the state change and the dissolve is over in ~40 ms. Time anything outside SwiftUI
+  (a CALayer fade) to measured frames, not to the curve.
+- SwiftUI `.opacity`/`.blur` on an `NSViewRepresentable` holding a WKWebView left the web content
+  blank or soft at rest: fade the view's own layer.
+- Moving a WKWebView into a window (`viewDidMoveToWindow`) costs 40–95 ms of main thread (WebKit
+  waits for the web process): keep it in the window, park it off-screen.
+- A page focusing one of its fields makes WebKit the window's first responder (claude.ai does it on
+  every window activation): guard `becomeFirstResponder` where another view must keep the keyboard.
 - Swift Testing: `#expect(cgFloat == 1512 + 1280)` failed with both sides printing 2792; compare
   CGFloats with a tolerance.
 - Built-in display brightness: DisplayServices (private) works, `CanChangeBrightness` is false
