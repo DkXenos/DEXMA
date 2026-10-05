@@ -19,6 +19,9 @@ like a third-party app.
 - **Draw to ask:** a Capture button at the right end of the band (every tab) or its own
   shortcut (default ⌥⇧`) freezes the display under the pointer; you draw around anything, and
   the crop flies into the notch and lands in claude.ai's message box. See *Capture*.
+- **Claude in floating glass (preview):** a Spotlight-style Liquid Glass window (⌥Space, or
+  the Claude tab in the notch) for the Claude tab and Draw to ask; the other tabs stay in the
+  notch. See *Floating Glass*.
 - **Connect peek:** when the Buds connect, the closed notch grows into a Dynamic-Island pill
   with their levels for ~3 s (click → Devices tab); red when a bud drops to 20 %/10 %.
 
@@ -83,7 +86,8 @@ Layers — keep them separated:
   window shows them.
 - `Navigation/WindowRouter` — opens DEXMA's windows; `AppCoordinator` implements it.
 - `System/LoginItem` (SMAppService), `System/FullScreenSpace` (is a full-screen app in front on
-  a display: CGS managed spaces via `dlsym`, type 4). `Extensions/` — `Logger(category:)`,
+  a display: CGS managed spaces via `dlsym`, type 4), `System/FocusHandoff` (the keyboard back
+  to the previous app; the notch and the floating glass). `Extensions/` — `Logger(category:)`,
   `NSScreen.displayID`.
 
 **Features**
@@ -108,7 +112,8 @@ Layers — keep them separated:
   bounds, clipped to the card and the silhouette). AppKit overlays above the SwiftUI band:
   `RunningDotView` (CA-pulsed), `URLEntryField` (⌘L on Claude). Services: `NotchGeometryProvider` (screen
   choice, size clamp, `-forcePill`), `HoverMonitor` (pointer over the notch → peek),
-  `FocusHandoff` (keyboard back to the previous app).
+  `ClaudeTabRedirect` (protocol: where the Claude tab goes instead, the floating glass;
+  `setClaudeRedirect` swaps Claude's page for `RedirectedTabPage`, a placeholder view).
 - `Terminal/` — `ShellSession`: ONE long-lived `LocalProcessTerminalView` + zsh (respawned
   on exit), its snapshot cache and its `ShellStatus` (working directory via `proc_pidinfo`,
   running = the PTY's foreground group isn't the shell's). Views: `ShellTerminalView`
@@ -175,7 +180,8 @@ Layers — keep them separated:
   window; pure), `CaptureCrop` (points → native pixels; pure), `StrokeGeometry` (Catmull–Rom,
   resampling, rounded-rect points for the morph; pure), `CaptureLook` (every constant +
   `scaled(by:)`), `CaptureBandLayout` (button/chip widths; pure), `FrozenScreen`,
-  `CapturedImage`, `PendingCapture`, `CapturePhase`, `ClaudeInsertMethod`. Services:
+  `CapturedImage`, `PendingCapture`, `CapturePhase`, `ClaudeInsertMethod`, `CaptureLandingStyle`
+  (into the notch, or into the floating glass's chip). Services:
   `ScreenFreezer` (SCScreenshotManager, DEXMA excluded, window frames), `CaptureEncoder` (crop +
   PNG + thumbnail, off main), `ClaudeAttacher` (into claude.ai's composer), `PasteboardSnapshot`,
   `CaptureArchive` (~/Pictures/DEXMA, opt-in), `CaptureHandoffTarget` (protocol; `NotchViewModel`
@@ -185,10 +191,22 @@ Layers — keep them separated:
   `CaptureOnboardingView`/`…WindowController`. The band's `CaptureControls` and
   `PendingCaptureChip` live in `Notch/Views` (they're band parts, `BandButtonStyle`).
 
+- `FloatingGlass/` — Claude in floating glass (see *Floating Glass*). Reusable: `FloatingGlassPanel`
+  (View: borderless non-activating key panel, modal-panel level, all Spaces/full screen),
+  `FloatingGlassController` (ViewModel: present on the pointer's screen / dismiss, the shapes'
+  `isShown`/`showsAccessories`/`scale`, focus handoff, click-outside), `GlassSurface`
+  (`floatingGlass(_:interactive:id:in:arrival:)` + `GlassGroup`: Liquid Glass on 26, the popover
+  material before), `VisualEffectMaterial`, `FloatingGlassContentView`, Model `GlassLayout` (pure).
+  Claude: `ClaudeGlassViewModel` (field, chip, send, card, keys; `ClaudeTabRedirect` +
+  `CaptureHandoffTarget`), Views `ClaudeGlassView`, `GlassTextView` (NSTextView: Spotlight's
+  type, Return/⇧Return), `GlassInputField`, `GlassWebCard` (claude.ai's card above the glass),
+  Service `ClaudeComposer` (page style script, typing, sending, verifying), Models `GlassMetrics`
+  (every measured number), `ClaudePageKind`, `GlassInputMode`.
+
 **Debug** (DEBUG only) — `DebugHarness` dispatches the launch flags to `SelfTest`
 (`-selftest`), `SnapshotTest` (`-snapshot <dir>`), `EffectTest` (`-effecttest <dir>`),
 `TabTest` (`-tabtest`), `SwipeTest` (`-swipetest`), `HoverTest` (`-hovertest`, `-bandshot`),
-`ClaudeProbe` (`-claudeprobe`), `CaptureTest` (`-capturetest`, `-captureorient`), `SizeTest` (`-sizetest`), `DeviceTest` (`-devicetest`) and `WarpTest` (`-warptest <dir>`, `-captureidle <s>`); `MockDevices` (the status item's
+`ClaudeProbe` (`-claudeprobe`), `CaptureTest` (`-capturetest`, `-captureorient`), `SizeTest` (`-sizetest`), `DeviceTest` (`-devicetest`), `WarpTest` (`-warptest <dir>`, `-captureidle <s>`), `GlassTest` (`-glasstest <dir>`), `GlassProbe` (`-glassprobe <dir>`) and `SpotlightMeasure` (`-spotlightmeasure <dir>`); `MockDevices` (the status item's
 *Mock Devices* menu); harness runs leave Bluetooth alone (`DebugHarness.isRequested`); `Support/` holds `DebugImages`,
 `FramePacingProbe` and `NotchViewModel.waitForRest()` (see *Debug snapshots*).
 
@@ -410,6 +428,98 @@ case was 581 pt wide), icon centred left, text right. ~3 s, longer while hovered
 zone covers the pill (the hover monitor runs while it's out even with peek-on-hover off);
 a click (peek state) opens on Devices. Never key. Opening/capture collapses it.
 
+## Floating Glass (2026-10-05, branch `feature/glass-claude`; preview, the user tests first)
+Claude in a Spotlight-style floating Liquid Glass window instead of the notch, for the Claude tab
+and Draw to ask only (Terminal, Search, Devices, the notch, the connect peek, gestures and the
+other shortcuts unchanged). Setting "Claude in floating glass (preview)" (`claudeInGlass`,
+default on), its own shortcut (`glassHotKey`, default ⌥Space, conflicts shown in Settings), "See-
+through Claude page" (`claudeSeeThrough`, default on). Off: everything as before.
+
+**Measured against Spotlight** (macOS 26 on the reference Mac, 1512 × 982 pt @2x, dark mode;
+`-spotlightmeasure` pictured the real Spotlight: `docs/reference/spotlight-empty.png`,
+`spotlight-results.png`; ours beside them in `docs/reference/compare/`; pixel ÷ 2 = points):
+
+| | Spotlight | DEXMA |
+| --- | --- | --- |
+| field | 640 × 56 capsule (radius 28) | 640 × 56 capsule; edges on the same pixels |
+| position | centred (x 436), top 203 pt = 20.67 % of the screen height | x 436, top 203 (`fieldTopFraction` of any screen's height, centred) |
+| icon | magnifier, ink 20.5–43.5 × 16.5–39.5 pt | sparkle (24 pt symbol; 20 pt drew a 19 pt glyph), ink 20.5–43.5 × 16.5–39.5 |
+| text | SF Pro 26 regular (string widths matched to 0.7 pt), starts at 61.0, cap top 18.0, baseline 37.0 | 26 regular, starts at 61.0, cap top 18.0, baseline 36.5 |
+| results | one shape: the field grows into a 640-wide rounded rect, radius 28 (circular fit at 4 heights), 1 px divider 56 pt down, field top unchanged | separate card (the spec): 640 wide, radius 28, 8 pt below the field (= the buttons' gap = the container spacing, so it morphs out of the field), up to 60 % of the screen (589 pt here), above the Dock |
+| shadow | the window keeps a 40 pt margin for it | the glass's own; window `hasShadow = false`, same 40 pt margin |
+| buttons | Spotlight's mode buttons didn't show in the pictures | spec placeholders: 40 pt circles, 8 pt apart, centred on the field |
+
+**APIs** (DocC JSON of the pages the user listed + the 26.2 SDK): SwiftUI `glassEffect(.regular,
+in:)` (applied after the appearance modifiers), `.regular.interactive()` on the buttons,
+`GlassEffectContainer(spacing: 8)` around every shape, `glassEffectID(_:in:)` + `@Namespace`,
+`glassEffectTransition(.materialize)` (the field) / `.matchedGeometry` (buttons and card: a shape
+morphs out of a neighbour whose edge is ≤ the spacing away). Regular variant only (text-heavy),
+no glass on glass (the page sits *in* the card's glass), system label colours (`.secondary`
+icon, `.primary` symbols, `labelColor`/`placeholderTextColor` text). The SDK's
+`NSGlassEffectView.h` has no `effectIsInteractive` (DocC lists it): SwiftUI throughout.
+**Before macOS 26** (`if #available(macOS 26, *)`, deployment target 14): `NSVisualEffectView`
+`.popover`, `.behindWindow`, `.active`, clipped to the same shapes, same layout, opacity + 0.96
+scale transitions (`-glasstest … -glassfallback` forces it on 26 for a picture).
+
+**Window** (`FloatingGlassPanel`): borderless, non-activating, `canBecomeKey` only while shown,
+level `.modalPanel` (8: above normal/floating windows, below the menu bar, the notch (26) and
+claude.ai's sign-in popups (27)), `.canJoinAllSpaces` + `.fullScreenAuxiliary` + `.transient`,
+not movable, fixed frame per screen (`GlassLayout`: every state fits, nothing resizes while it
+animates), ordered out when hidden (kept alive; keeping it ordered in measured no better).
+Dismiss: Esc, a click outside (losing key, unless claude.ai's sign-in popup took it; a click on
+the window's empty area too), ⌘W, the shortcut again; the keyboard goes back (`FocusHandoff`) on
+the next run-loop turn. ⌘C/V/X/A/Z routed like the notch's, ⌘Q swallowed.
+
+**Card and page:** the Claude tab's own `WebTab` card (same web view, session, cookies) moves from
+the notch's pager into `GlassWebCard`, an AppKit overlay above the SwiftUI glass at the card's
+frame (a web view can't live inside a glass effect; never re-parented or resized while morphing);
+it fades in after the card has grown, out before it shrinks, and is hidden only once the
+animation is over (hiding a web view costs WebKit ~25 ms on the main thread). The notch gets
+`RedirectedTabPage` in Claude's slot. See-through: the web view's background off —
+**`drawsBackground` is private** (KVC → `_setDrawsBackground:`, only if WebKit responds to it;
+public `underPageBackgroundColor = .clear` covers only the overscroll area) — and a user script
+(`ClaudeComposer.pageScript`, document start) tags with data attributes and clears: `html`,
+`body`, every element painting a background ≥ 60 % wide and ≥ 40 % tall, wide bars that are
+sticky/fixed or pinned at the top, and `.df-header-backdrop` (the conversation's top bar,
+2026-10-05); never menus, dialogs, tooltips, `pre` or the composer. A 12 % dimming layer (black in
+dark mode, white in light) under the page keeps text legible on bright wallpapers. The page and
+the glass follow the system's appearance (the notch keeps forcing dark). See-through off: the
+card paints the page's own colour inside the glass.
+
+**Sending** (Return in the native field; ⇧Return a new line, up to 5 lines then it scrolls):
+claude.ai's composer (`[data-testid=chat-input]` in a fieldset, TipTap/ProseMirror) is moved out of
+sight (fixed, off-screen, still laid out and focusable) while the native path works. The card
+opens at once; wait ≤ 15 s for the composer; the chip's picture goes in with Draw to ask's
+`ClaudeAttacher` (real paste first); the text replaces the draft through `execCommand`
+(`insertText`, `insertParagraph` per line) — checked against the editor's text, else a synthetic
+`ClipboardEvent` paste (both measured to work; a native `insertText` lost the line break);
+`[data-testid=chat-input-send]` is clicked once enabled (≤ 30 s while disabled: uploads; 2 s if
+missing); sent = the editor empties and a user message appears or the URL changes. The field
+clears only then. Any failure: claude.ai's composer comes back (style updated), gets the text
+and the keyboard, the field keeps it too; the next presentation tries the native path again.
+
+**Entry points:** ⌥Space; the Claude tab in the notch (click, ⌘3, ⌃Tab, swipe: `select`/
+`endTabSwipe` hand over, the notch closes without handing the keyboard back, the selected tab
+stays what it was); Draw to ask (`CaptureLandingStyle.chip`: the picture flies onto the chip
+(`CaptureOverlayView.fly(into:)`, fitted, rounding to its corners), `takeCapture` keeps it as the
+attachment, the glass comes up compact with the field focused at 60 % of the flight). The
+capture shortcut/button and the menu item work as before; the notch still steps aside
+(`companion`). Opening the notch hides the glass (it takes the keyboard); ⌥Space closes an open
+notch. The card opens by itself for a conversation, the sign-in page or any other claude.ai
+page (`ClaudePageKind`); ⌘↓/⌘↑ open/close it; New chat (⌘⇧R) loads /new and closes it; Open in
+browser (⌘⇧O) hides the glass; ⌘L turns the field into a link field (Esc back); ⌘R, ⌘[, ⌘].
+
+**Motion:** present = shapes inserted with the system glass transitions inside a 0.96 → 1
+`scaleEffect` on `.spring(duration: 0.3, bounce: 0.12)`, the buttons a beat (0.07 s) later
+(morphing out of the field); card `.spring(duration: 0.38, bounce: 0.12)`; Reduce Motion: 0.18 s
+ease, no scale, no stagger. No Metal distortion on the glass (it stays the notch's). The glass is
+built and drawn once at launch, invisibly (`warmUp`).
+**Measured** (`-glasstest`, Debug, 120 Hz, a display link on a window that stays on screen):
+expand 0 late frames; present, collapse and dismiss at most one missed vsync (worst 16.7–20.8 ms,
+like the notch's 0–1 noise), no main-thread pass over 20 ms in any of them; `present()` 1.5–8 ms,
+`dismiss()` 5–7 ms. Before the fixes: first present 26 ms (no warm-up), collapse 25 ms (web view
+hidden mid-animation), dismiss 22 ms (focus return in the animation's first pass).
+
 ## Animation model
 - `progress` is always the on-screen (presentation) value. `SpringDriver` steps it each
   display frame with `Spring.update(value:velocity:target:deltaTime:)`; nothing animates
@@ -529,6 +639,9 @@ a click (peek state) opens on Devices. Never key. Opening/capture collapses it.
   `feature/claude-tab`; pushed, not merged: the user tests first).
 - [x] 17. Devices tab: Galaxy Buds battery over Bluetooth, DeviceStore, connect peek (branch
   `feature/devices-tab`, from `feature/capture`; pushed, not merged: the user tests first).
+- [x] 18. Claude in floating glass (Spotlight-style Liquid Glass window for the Claude tab and Draw
+  to ask; branch `feature/glass-claude`, from `feature/devices-tab`; pushed, not merged: the user
+  tests first).
 
 The user asked (2026-10-01) to run phases 2–8 without stopping between them: per phase, read
 package sources, build to 0 errors/0 warnings, launch-check, `git commit -m "Phase N: …"`,
@@ -769,6 +882,27 @@ update Progress below.
   RFCOMM stream on the Buds3 Pro (SDP records, channel, first 0x61, charging offset 42), the
   fallback's sources for these Buds, connect/disconnect notifications on hardware, energy.
 
+- **Phase 18 (floating glass):** see *Floating Glass*. The user's Spotlight screenshots weren't in
+  the repo or on disk, so `-spotlightmeasure` pictured the real Spotlight (keys from `osascript`,
+  typed only once DEXMA saw Spotlight's window: the Debug build isn't trusted for Accessibility;
+  crops committed tightly, the repo is public). Verified with `-glasstest` (Debug, launched with
+  `open`; light/dark stand-in wallpapers in a window under the glass): presented key with the
+  field focused and the user's app still frontmost; ordered out and not key after; a conversation
+  presents with the card; ⇧Return (2 lines, 86 pt); ⌘↓/⌘↑; text into claude.ai's box (2 lines,
+  then cleared); the composer hidden (off-screen) while native; the see-through body; Esc; the
+  fallback (send button removed → claude.ai's box shown with the text, the field keeps it, the
+  page has the keyboard); Draw to ask → chip, compact, field focused, overlay gone; click outside;
+  Search stays a notch tab, the Claude tab hands over (notch closed, glass key); Reduce Motion;
+  the setting off (Claude back in the notch: card in its panel, dark, composer shown) and on
+  again. One real send (`-glasssend`, "Reply with just: OK" → claude.ai/chat/…, answered "OK";
+  the conversation "Greeting" stays in the user's history). Pixel checks vs Spotlight: see the
+  table. 108 unit tests (12 new: `GlassLayout`, `ClaudePageKind`). 0 warnings Debug/Release;
+  Release launch-checked. One flaky run had claude.ai's page blank for the whole run (nothing
+  rendered; the next run and a probe were fine). Unverified (needs the user): the feel, real
+  typing/IME in the field, ⌥Space on hardware (and whether another app holds it), Spaces/full
+  screen, a second display, Reduce Transparency/Increase Contrast (the system draws those),
+  a real capture's paste with the composer off-screen + its upload, macOS 14/15.
+
 ## Hardware test checklist (needs the user)
 - Tabs: ⌘1/⌘2/⌘L, clicking segments, focus after reopening (page vs field), Esc on both tabs.
 - Search: a Google search, typing in Google's own fields, IME in the field, link clicks,
@@ -794,6 +928,10 @@ update Progress below.
 - Devices: see the checklist given on 2026-10-05 (connect peek values, bud in/out of the case,
   last seen, the case's own time, charging colours, low-battery peek, restart, ⌘4/swipe/hover,
   mock menu absent in Release, energy impact).
+- Floating glass: see the checklist given on 2026-10-05 (⌥Space, Esc/click outside, focus back,
+  compact → expanded morph, typing/sending, capture chip + question, fallback, new chat, open in
+  browser, see-through legibility light/dark, full screen/Spaces, multi-display, Reduce
+  Transparency, Increase Contrast, Reduce Motion, the notch's other tabs unchanged).
 - Claude: sign-in (Google popup, email + ⌘L link), still signed in after a restart, focus
   in the message box, New chat, Open in browser, external links in the browser, pasting
   and dragging an image, page zoom.
@@ -810,6 +948,16 @@ radio) and prints the model and status channel (launch with `open -n <app> --std
 `-devicetest <dir>` checks the Devices tab and the connect peek with mock Buds (launch it with
 `open -n <app> --stdout <dir>/out.txt --args -devicetest <dir>`, read out.txt + PNGs); it also
 starts the real Buds monitor once (other harness runs never touch Bluetooth).
+`-glasstest <dir>` checks Claude in floating glass (launch with `open -n <app> --stdout <dir>/out.txt
+--args -glasstest <dir>`, ~3 min; covers the screen with a stand-in wallpaper window, uses the
+claude.ai session but sends nothing): looks, pacing, keys, the composer, the fallback, the capture
+hand-off, the notch hand-over, Reduce Motion, the setting (it removes the `claudeInGlass` key
+after). Extra flags: `-glasssend` (sends one real message), `-glassconversation <url>` (pictures a
+conversation), `-glasspacing` (pacing only), `-glassfallback` (the pre-26 material). `-glassprobe
+<dir>` reads claude.ai's DOM (composer, send button, backgrounds; `-inserttest` types into the
+box and clears it, `-probeurl <url>`, `-cleardraft`). `-spotlightmeasure <dir>` waits for
+Spotlight's window, pictures it, writes `empty-ready` (type the query only then), pictures the
+results.
 `-capturetest <dir>` checks Draw to ask end to end (see Progress, Phase 16; it covers the
 built-in display with the overlay for ~2 min and borrows the clipboard, restoring it); launch it
 with `open -n <app> --args -capturetest <dir>` to include real freezes, then read
@@ -924,6 +1072,23 @@ and never quits (wrap runs in a watchdog).
 - Local `func`s inside a `Task { @MainActor in … }` aren't main-actor isolated in this build
   setup (warnings): mark them `@MainActor`.
 - `ImageRenderer` renders a SwiftUI view to a `CGImage` with its text (unlike `cacheDisplay`).
+- SwiftUI inserts an `NSViewRepresentable`'s view a moment after the state change: `makeFirstResponder`
+  right after showing it does nothing (the floating glass's field takes focus in
+  `viewDidMoveToWindow`).
+- `ContentPagerView` hides the pages it isn't showing (`isHidden`): a page moved elsewhere (the
+  Claude card into the glass) must be un-hidden.
+- A window's own `displayLink` stops while the window is ordered out: frame-pacing probes that span
+  a window coming and going need another window's link (a "225 ms frame" was just that).
+- Hiding (`isHidden`) a view containing a WKWebView costs ~25 ms on the main thread: do it after
+  the animation, not during it.
+- claude.ai saves the composer's draft (debounced ~1 s, per page): a test that types into it must
+  clear it and wait before reloading, or the text comes back as the user's draft.
+- A WKWebView's background on macOS: no public switch; `setValue(false, forKey: "drawsBackground")`
+  (→ `_setDrawsBackground:`), guarded with `responds(to:)`.
+- A Debug build isn't trusted for Accessibility (CGEvent posting fails); `osascript` from the shell
+  (the editor's grant) can press keys; DEXMA's Screen Recording grant still works for Debug.
+- Swift Testing: `#expect(cgFloat == 1512 + 1280)` failed with both sides printing 2792; compare
+  CGFloats with a tolerance.
 - Built-in display brightness: DisplayServices (private) works, `CanChangeBrightness` is false
   for an external monitor; `kAudioHardwareServiceDeviceProperty_VirtualMainVolume` needs
   `import AudioToolbox`.

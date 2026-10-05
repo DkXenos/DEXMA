@@ -51,6 +51,23 @@ app you were using. When closed, DEXMA is invisible.
   message box is there; click the chip to try again, or ✕ to throw it away. Captures stay in
   memory unless you turn on *Also save captures to ~/Pictures/DEXMA*. Settings also has the
   shortcut, *Start a new chat for each capture*, and the strength of the capture effects.
+- **Claude in floating glass (preview, on by default on this branch):** Claude can also live
+  in a Spotlight-style Liquid Glass window instead of the notch. Press <kbd>⌥</kbd><kbd>Space</kbd>
+  from anywhere (or pick the Claude tab in the notch: a click, <kbd>⌘</kbd><kbd>3</kbd> or a
+  swipe) and a glass field, *Ask Claude…*, floats where Spotlight's does, with three round glass
+  buttons beside it: Draw to ask, New chat and Open in browser. Type your question and press
+  Return: it goes into claude.ai and is sent, and a glass card opens below the field with the
+  conversation in it, so the answer floats over whatever you were doing. <kbd>⇧</kbd><kbd>Return</kbd>
+  starts a new line. The card opens by itself while a conversation is open; <kbd>⌘</kbd><kbd>↓</kbd>
+  and <kbd>⌘</kbd><kbd>↑</kbd> open and close it. Draw to ask lands in the field instead: the
+  picture flies into a small chip at its left, and you type the question that goes with it. If
+  sending from the field ever fails (claude.ai changed, or you're signed out), claude.ai's own
+  message box comes back with your text in it, so nothing you typed is lost. <kbd>Esc</kbd>, a
+  click outside or the shortcut again hides it, and the keyboard goes back to the app you were in.
+  Settings → *Claude tab* turns it off (Claude goes back into the notch), changes its shortcut,
+  and switches the *see-through* page off (claude.ai keeps its own dark background inside the
+  glass). On macOS 14 and 15 the same window uses the system's popover material instead of
+  Liquid Glass. Terminal, Search and Devices stay in the notch as before.
 - **Gesture or shortcut:** a two-finger swipe from the top edge of the trackpad, or
   <kbd>⌥</kbd><kbd>`</kbd> from anywhere (you can change the shortcut). Hovering over the
   notch makes it swell slightly; click to open.
@@ -160,16 +177,21 @@ The app uses a feature-based MVVM layout (AppKit + SwiftUI), with one type per f
   settings store, permissions, launch at login.
 - `DEXMA/Features/`: one folder per feature: `Notch`, `Terminal`, `WebTab`, `Search`, `Gestures`,
   `LiquidMotion`, `ScreenWarp`, `HotKey`, `MenuBar`, `Settings`, `Onboarding`, `Capture`
-  (Draw to ask) and `Devices` (the Buds' battery). Each is
+  (Draw to ask), `Devices` (the Buds' battery) and `FloatingGlass` (the Spotlight-style
+  window: `FloatingGlassPanel` and its controller are reusable, Claude is its first content). Each is
   split into `Models/`, `ViewModels/`, `Views/` and `Services/` (and `Shaders/` for Metal),
   as far as it needs them.
 - `DEXMA/Resources/`: the asset catalog with the app icon.
 - `DEXMA/Debug/`: self-checks that only exist in Debug builds (`-selftest`, `-snapshot`,
   `-effecttest`, `-tabtest`, `-swipetest`, `-hovertest`, `-claudeprobe`, `-capturetest`,
-  `-devicetest`, `-warptest`), and the menu bar item's *Mock Devices* menu (fake Buds).
+  `-devicetest`, `-warptest`, `-glasstest`, `-glassprobe`, `-spotlightmeasure`), and the menu
+  bar item's *Mock Devices* menu (fake Buds).
 - `DEXMATests/`: unit tests (Swift Testing), in the same `Core/` and `Features/` folders:
   gesture recognition, geometry, the liquid effect, search addresses, shortcut recording,
   settings migration, the capture's selection, crop and stroke maths, the Buds protocol
-  (framing, checksum, status messages, identification) and the device store.
+  (framing, checksum, status messages, identification), the device store, and the floating
+  glass's layout and claude.ai page kinds.
+- `docs/reference/`: pictures of Spotlight on macOS 26 (what the floating glass is measured
+  against) and, in `compare/`, DEXMA's glass window next to them.
 - `DEXMAUITests/`: Xcode's UI test template.
 - `CLAUDE.md`: architecture notes, rules and a development log.
