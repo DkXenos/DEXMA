@@ -4,11 +4,11 @@ import AppKit
 /// Debug-only launch arguments that check the running app, print what they find and quit:
 /// `-selftest`, `-snapshot <dir>`, `-effecttest <dir>`, `-tabtest <dir>`, `-swipetest <dir>`,
 /// `-hovertest <dir>`, `-capturetest <dir>`, `-devicetest <dir>`,
-/// `-warptest <dir>`, `-captureidle <s>`.
+/// `-warptest <dir>`, `-captureidle <s>`, `-glasstest <dir>`, `-glassprobe <dir>`, `-spotlightmeasure <dir>`.
 enum DebugHarness {
     private static let flags = ["-selftest", "-captureidle", "-warptest", "-sizetest", "-captureorient", "-capturetest",
                                 "-claudeprobe", "-swipetest", "-bandshot", "-hovertest", "-tabtest", "-effecttest",
-                                "-snapshot", "-devicetest", "-budsprobe"]
+                                "-snapshot", "-devicetest", "-budsprobe", "-glassprobe", "-spotlightmeasure", "-glasstest"]
 
     /// A harness run: the app leaves Bluetooth alone (no permission prompt mid-test);
     /// `-devicetest` starts the Buds monitor itself.
@@ -54,6 +54,14 @@ enum DebugHarness {
         } else if let dir = value(after: "-devicetest") {
             DeviceTest.run(panel: panel, notch: notch, startMonitor: { coordinator.debugStartBudsMonitor() },
                            dir: URL(fileURLWithPath: dir))
+        } else if let dir = value(after: "-glasstest"), let glass = coordinator.debugClaudeGlass,
+                  let capture = coordinator.debugCapture {
+            GlassTest.run(glass: glass, notch: notch, capture: capture, settings: coordinator.settings,
+                          dir: URL(fileURLWithPath: dir))
+        } else if let dir = value(after: "-spotlightmeasure") {
+            SpotlightMeasure.run(dir: URL(fileURLWithPath: dir))
+        } else if let dir = value(after: "-glassprobe") {
+            GlassProbe.run(notch: notch, dir: URL(fileURLWithPath: dir))
         } else if let dir = value(after: "-snapshot") {
             SnapshotTest.run(panel: panel, notch: notch, session: session, dir: URL(fileURLWithPath: dir))
         }
