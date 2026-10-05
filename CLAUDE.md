@@ -14,7 +14,7 @@ like a third-party app.
   `LocalProcessTerminalView` running a persistent zsh, spawned at app launch and never killed
   when the panel closes — **Search** — a search field over a `WKWebView` (Google search, or
   any address) — **Claude** — claude.ai in a `WKWebView` — and **Devices** — the Galaxy
-  Buds' battery. See *Tab UI*, *WebTab* and *Devices*.
+  Buds' battery plus quick controls (brightness, volume). See *Tab UI*, *WebTab* and *Devices*.
 - **Close:** swipe up, Esc, or hotkey. Focus returns to the previously active app.
 - **Draw to ask:** a Capture button at the right end of the band (every tab) or its own
   shortcut (default ⌥⇧`) freezes the display under the pointer; you draw around anything, and
@@ -165,9 +165,12 @@ Layers — keep them separated:
   Support), `BluetoothBudsMonitor` (connect/disconnect notifications), `BudsConnection` (SDP →
   RFCOMM → readings, backoff, fallback), `SDPRecords`, `SystemBatteryReader` (fallback),
   `DevicesPage` (the tab's `MotionContent`: `ImageRenderer` picture), `DeviceActivityTarget`
-  (protocol; `NotchViewModel`). ViewModel: `DevicesViewModel` (events → peeks, relative-time
-  clock). Views: `DevicesCardView` (the pager page: hosting view), `DevicesPageView`,
-  `DeviceCardView`, `BatteryGauge`, `DevicesEmptyView`, `DevicesPalette`.
+  (protocol; `NotchViewModel`), `SystemVolume` (CoreAudio default output volume/mute with
+  listeners), `DisplayBrightness` (built-in display via DisplayServices, `dlsym`). ViewModels:
+  `DevicesViewModel` (events → peeks, relative-time clock), `QuickControlsViewModel` (the
+  Controls card). Views: `DevicesCardView` (the pager page: hosting view), `DevicesPageView`,
+  `DeviceCardView`, `BatteryGauge`, `DevicesEmptyView`, `DevicesPalette`, `QuickControlsCard`,
+  `LevelSlider` (Model `SliderTrack`, pure).
 - `Capture/` — Draw to ask (see *Capture*). Models: `CaptureSelection` (stroke → box, click →
   window; pure), `CaptureCrop` (points → native pixels; pure), `StrokeGeometry` (Catmull–Rom,
   resampling, rounded-rect points for the morph; pure), `CaptureLook` (every constant +
@@ -374,6 +377,24 @@ disconnected, its own "3h ago" when ≥ 60 s older than the newest; level change
 aimed at the next change (`RelativeTime.nextChange`), none when nothing shows a time. The
 liquid effect's picture: `ImageRenderer` of the same view (cacheDisplay can't draw SwiftUI
 text), idle like the other tabs. Band: `DeviceSummary.band` of the most recent device.
+
+**Controls (2026-10-05, the user: "the tab is better for QoL features"):** the page is two
+columns: devices (or the empty card) left, a Controls card right (36 % of the width, ≥ 180 pt,
+same card look, both as tall as the taller): "Display" (the built-in display's brightness)
+and "Sound" (the default output's volume), label + percentage over a Control Center-style
+`LevelSlider` (28 pt capsule, white 12 % track, white fill growing from the icon's circle,
+click/drag follows the pointer, no animation). Volume: CoreAudio
+`kAudioHardwareServiceDeviceProperty_VirtualMainVolume` + mute on the default output, with
+property listeners (volume keys, Control Center, output switches) on the main queue —
+event-driven; raising it unmutes; muted shows 0 and `speaker.slash.fill`; no volume control →
+disabled. Brightness: no public API on Apple silicon (IOKit display parameters don't apply) →
+DisplayServices `Get/Set/CanChangeBrightness(displayID)` via `dlsym` (what the brightness keys
+use; MonitorControl/Lunar do the same), built-in display only (externals need DDC: disabled,
+"—"), never below 0.02 (0 turns the backlight off). No change notification is used (its
+signature isn't documented), so it's re-read when the tab comes to rest on screen
+(`DevicesPage.didShow`: panel settled open on Devices, or the tab spring settled on it) —
+never during an animation; a refresh costs 0.17 ms. The page's picture follows the controls'
+values (observation), like the devices'.
 
 **Connect peek:** `DevicesViewModel` asks `showDeviceActivity` on the first reading after a
 connect (setting on) and when `LowBatteryPolicy` says a bud (not the case, not charging)
@@ -902,3 +923,6 @@ and never quits (wrap runs in a watchdog).
 - Local `func`s inside a `Task { @MainActor in … }` aren't main-actor isolated in this build
   setup (warnings): mark them `@MainActor`.
 - `ImageRenderer` renders a SwiftUI view to a `CGImage` with its text (unlike `cacheDisplay`).
+- Built-in display brightness: DisplayServices (private) works, `CanChangeBrightness` is false
+  for an external monitor; `kAudioHardwareServiceDeviceProperty_VirtualMainVolume` needs
+  `import AudioToolbox`.

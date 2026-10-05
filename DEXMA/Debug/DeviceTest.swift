@@ -152,6 +152,23 @@ enum DeviceTest {
                    "page picture for the liquid effect: \(snapshot.map { "\(Int($0.size.width)) × \(Int($0.size.height)) @\(Int($0.scale))x" } ?? "none")")
             if let image = snapshot?.image, let over = DebugImages.overBlack(image) { DebugImages.write(over, dir, "3-devices-snapshot") }
 
+            // Controls: what the card shows is the system's (read-only check; volume is written
+            // back at its current value only, so nothing changes for the user).
+            let controls = notch.devicesPage.debugControls
+            let systemBrightness = DisplayBrightness.level()
+            report(controls.brightness != nil && systemBrightness.map { abs(Double($0) - (controls.brightness ?? -1)) < 0.01 } == true,
+                   String(format: "brightness slider %.2f (system %.2f)", controls.brightness ?? -1, systemBrightness ?? -1))
+            let before = controls.volume
+            let start = CACurrentMediaTime()
+            if let before { controls.setVolume(before) }
+            let setTime = (CACurrentMediaTime() - start) * 1000
+            report(before != nil && controls.canSetVolume && controls.volume.map { abs($0 - (before ?? -1)) < 0.01 } == true,
+                   String(format: "volume slider %.2f, muted %@, settable %@; write-back %.2f ms", controls.volume ?? -1,
+                          controls.isMuted ? "yes" : "no", controls.canSetVolume ? "yes" : "no", setTime))
+            let readStart = CACurrentMediaTime()
+            controls.refresh()
+            print(String(format: "[devices]   controls refresh (brightness + volume read): %.2f ms", (CACurrentMediaTime() - readStart) * 1000))
+
             // 4. Keys: ⌘1 then ⌘4, ⌃Tab wraps to the terminal.
             @MainActor func key(_ characters: String, _ code: UInt16, _ flags: NSEvent.ModifierFlags) -> NSEvent? {
                 NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: flags, timestamp: 0,

@@ -7,8 +7,8 @@ import SwiftUI
 final class DevicesCardView: NSView {
     private let hosting: NSHostingView<DevicesPageView>
 
-    init(viewModel: DevicesViewModel, size: CGSize) {
-        hosting = NSHostingView(rootView: DevicesPageView(viewModel: viewModel))
+    init(viewModel: DevicesViewModel, controls: QuickControlsViewModel, size: CGSize) {
+        hosting = NSHostingView(rootView: DevicesPageView(viewModel: viewModel, controls: controls))
         super.init(frame: CGRect(origin: .zero, size: size))
         hosting.sizingOptions = []  // The pager sizes it; SwiftUI must never resize it.
         hosting.safeAreaRegions = []

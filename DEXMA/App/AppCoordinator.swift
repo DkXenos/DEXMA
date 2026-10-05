@@ -43,7 +43,9 @@ final class AppCoordinator: WindowRouter {
         let urlField = URLEntryField(frame: .zero)
         // The Devices tab: what's remembered shows at once; the Buds are read when they connect.
         let devices = DevicesViewModel(store: deviceStore, bluetooth: bluetooth)
-        let devicesPage = DevicesPage(viewModel: devices, size: geometry.contentFrame.size)
+        // Its Controls card: volume follows the system live; brightness is read when shown.
+        let controls = QuickControlsViewModel(output: SystemVolume())
+        let devicesPage = DevicesPage(viewModel: devices, controls: controls, size: geometry.contentFrame.size)
         let notch = NotchViewModel(panel: panel, session: session, search: search, claude: claude, devices: devices,
                                    devicesPage: devicesPage, pager: pager, runningDot: runningDot, urlField: urlField,
                                    geometry: geometry)

@@ -34,7 +34,9 @@ app you were using. When closed, DEXMA is invisible.
   pop-up on an iPhone; click it to open the Devices tab. It never takes the keyboard, doesn't
   show while the panel is open (the tab just updates), and stays away from full-screen apps
   unless you allow it. The same peek in red tells you when a bud drops to 20 % and again at
-  10 %. Settings → Devices has the switches and *Forget* for each device. DEXMA only listens
+  10 %. Beside the Buds, a Controls card has Control Center-style sliders for the built-in
+  display's brightness and the sound volume (it follows the volume keys live).
+  Settings → Devices has the switches and *Forget* for each device. DEXMA only listens
   while the Buds are connected and never sends them anything (see *Permissions*). Tested
   first with the Galaxy Buds3 Pro; the other Galaxy Buds models are in its table too.
 - **Draw to ask Claude:** press <kbd>⌥</kbd><kbd>⇧</kbd><kbd>`</kbd> from anywhere (or the

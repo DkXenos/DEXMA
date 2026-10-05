@@ -120,6 +120,7 @@ final class NotchViewModel: SwipeTarget, TabSwipeTarget, CaptureHandoffTarget, D
         tabDriver.onRest = { [weak self] _ in
             guard let self else { return }
             self.motion.contentDidChange(self.selectedContent)
+            if self.state == .open, self.tab == .devices { self.devicesPage.didShow() }
         }
         tabDriver.onFrame = { [weak self, weak tabDriver] dt in
             self?.band.stepIndicator(dt: dt, velocity: tabDriver?.screenVelocity ?? 0) ?? false
@@ -656,6 +657,9 @@ final class NotchViewModel: SwipeTarget, TabSwipeTarget, CaptureHandoffTarget, D
     // MARK: Focus
 
     private func didSettle(at value: CGFloat) {
+        // Open on Devices: its Controls catch up with changes made elsewhere (at rest, so
+        // nothing is read during the animation).
+        if value == 1, state == .open, tab == .devices { devicesPage.didShow() }
         guard value == 0, state == .closed else { return }
         // Belt and braces: if the panel somehow kept key status, ordering it out drops it and
         // AppKit gives the keyboard back to the frontmost app. Closed, it's invisible anyway.
