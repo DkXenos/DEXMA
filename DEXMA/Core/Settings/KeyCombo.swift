@@ -18,6 +18,11 @@ nonisolated struct KeyCombo: Codable, Equatable {
                                               carbonModifiers: UInt32(optionKey | shiftKey), display: "⌥⇧`",
                                               menuKey: "`")
 
+    /// Claude in floating glass, ⌥Space (Spotlight's ⌘Space with ⌥, as in ChatGPT's and Raycast's).
+    static let defaultGlassCombo = KeyCombo(keyCode: UInt32(kVK_Space),
+                                            carbonModifiers: UInt32(optionKey), display: "⌥Space",
+                                            menuKey: " ")
+
     var menuModifiers: NSEvent.ModifierFlags {
         var flags: NSEvent.ModifierFlags = []
         if carbonModifiers & UInt32(cmdKey) != 0 { flags.insert(.command) }

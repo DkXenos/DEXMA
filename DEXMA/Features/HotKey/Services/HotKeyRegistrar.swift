@@ -29,6 +29,13 @@ final class HotKeyRegistrar {
         update()
     }
 
+    /// No shortcut at all (its feature is switched off).
+    func unregister() {
+        combo = nil
+        registeredCombo = nil
+        hotKey = nil
+    }
+
     private func update() {
         if isPaused {
             hotKey = nil

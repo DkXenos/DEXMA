@@ -471,7 +471,7 @@ enum CaptureTest {
 
     /// A display-sized picture: dark gradient, a 100 pt grid, a red square in the top-left corner
     /// (orientation), small text (crop sharpness), and one "window" at (300, 250, 500 × 320).
-    private static func syntheticFrozen(for screen: NSScreen) -> FrozenScreen {
+    static func syntheticFrozen(for screen: NSScreen) -> FrozenScreen {
         let size = screen.frame.size
         let scale = screen.backingScaleFactor
         let context = CGContext(data: nil, width: Int(size.width * scale), height: Int(size.height * scale), bitsPerComponent: 8,

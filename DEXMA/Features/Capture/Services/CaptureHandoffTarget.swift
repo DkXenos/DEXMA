@@ -22,4 +22,15 @@ protocol CaptureHandoffTarget: AnyObject {
     func claudeContentDidChange()
     /// The band's chip came or went: the tab's context has a different width.
     func captureChipDidChange()
+    /// How the picture lands (`captureLanding`'s rect is the notch, or the chip).
+    var captureLandingStyle: CaptureLandingStyle { get }
+    /// Takes the finished capture itself, as an attachment waiting for the question (the
+    /// floating glass), instead of having it pasted into claude.ai's message box. Called right
+    /// before `openForCapture`.
+    func takeCapture(_ image: CapturedImage) -> Bool
+}
+
+extension CaptureHandoffTarget {
+    var captureLandingStyle: CaptureLandingStyle { .notch }
+    func takeCapture(_ image: CapturedImage) -> Bool { false }
 }

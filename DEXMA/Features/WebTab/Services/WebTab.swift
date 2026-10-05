@@ -124,10 +124,7 @@ final class WebTab: NSObject, MotionContent, WKNavigationDelegate, WKUIDelegate,
         // The handlers are retained by the content controller; both live as long as the app.
         contentController.add(self, name: Self.scrollMessage)
         contentController.add(self, name: Self.backgroundMessage)
-        contentController.addUserScript(
-            WKUserScript(source: Self.scrollScript, injectionTime: .atDocumentEnd, forMainFrameOnly: true))
-        contentController.addUserScript(
-            WKUserScript(source: Self.backgroundScript, injectionTime: .atDocumentEnd, forMainFrameOnly: true))
+        installScripts()
         if configuration.hasSearchField {
             card.field.delegate = self
             card.field.target = self
@@ -140,6 +137,45 @@ final class WebTab: NSObject, MotionContent, WKNavigationDelegate, WKUIDelegate,
             card.showsPage = true
             webView.load(URLRequest(url: home))
         }
+    }
+
+    /// Every page's scripts: the tab's own, then `pageScript`.
+    private func installScripts() {
+        contentController.removeAllUserScripts()
+        contentController.addUserScript(
+            WKUserScript(source: Self.scrollScript, injectionTime: .atDocumentEnd, forMainFrameOnly: true))
+        contentController.addUserScript(
+            WKUserScript(source: Self.backgroundScript, injectionTime: .atDocumentEnd, forMainFrameOnly: true))
+        if let pageScript {
+            contentController.addUserScript(
+                WKUserScript(source: pageScript, injectionTime: .atDocumentStart, forMainFrameOnly: true))
+        }
+    }
+
+    /// An extra script run at the start of every page (the floating glass's page style), from the
+    /// next page load on; nil: none.
+    var pageScript: String? {
+        didSet { if pageScript != oldValue { installScripts() } }
+    }
+
+    /// Where the page is shown: the notch (dark, on the card's colour, as always) or floating
+    /// glass (the system's appearance; `clear`: no background at all, so the glass shows through).
+    func setPresentation(glass: Bool, clear: Bool) {
+        let appearance = glass ? nil : NSAppearance(named: .darkAqua)
+        card.appearance = appearance
+        webView.appearance = appearance
+        card.drawsCardBackground = !(glass && clear)
+        Self.setDrawsBackground(!(glass && clear), of: webView)
+    }
+
+    /// WKWebView on macOS has no public switch for its own background (`underPageBackgroundColor`
+    /// only covers the overscroll area): `drawsBackground` is WebKit's private property, set through
+    /// KVC only if WebKit still answers to it (otherwise the page keeps its background).
+    private static func setDrawsBackground(_ draws: Bool, of webView: WKWebView) {
+        guard webView.responds(to: NSSelectorFromString("_setDrawsBackground:"))
+                || webView.responds(to: NSSelectorFromString("setDrawsBackground:")) else { return }
+        webView.setValue(draws, forKey: "drawsBackground")
+        webView.underPageBackgroundColor = draws ? nil : .clear
     }
 
     /// A web view of this tab: dark, Safari's user agent, the tab's scripts, the shared
@@ -186,6 +222,7 @@ final class WebTab: NSObject, MotionContent, WKNavigationDelegate, WKUIDelegate,
         return scheme == "https"
     }
 
+    var url: URL? { webView.url }
     var canGoBack: Bool { webView.canGoBack }
     var canGoForward: Bool { webView.canGoForward }
     var isLoading: Bool { webView.isLoading }

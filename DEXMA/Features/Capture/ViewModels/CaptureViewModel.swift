@@ -196,6 +196,8 @@ final class CaptureViewModel {
 
     /// The picture flies into the notch (or, with Reduce Motion, everything fades), the notch opens
     /// on the Claude tab, and the picture goes into the message box once the panel is at rest.
+    /// With Claude in floating glass, it flies onto the glass field's chip instead and waits there
+    /// for the question.
     private func handOff(_ image: CapturedImage, from screen: NSScreen) {
         phase = .flying
         if savesCopies { CaptureArchive.save(image.png) }
@@ -207,8 +209,10 @@ final class CaptureViewModel {
             guard let self, id == self.generation, !self.leaving, !opened else { return }
             opened = true
             self.leaving = true  // Too late to cancel: the picture is in the notch.
+            // The floating glass keeps the picture for the question; the notch has it pasted in.
+            let taken = self.target?.takeCapture(image) == true
             self.target?.openForCapture()
-            self.insert(image)
+            if !taken { self.insert(image) }
         }
         guard animated else {
             panel.overlay.fadeAway(duration: look.reducedFade) { [weak self] in
@@ -219,6 +223,17 @@ final class CaptureViewModel {
             return
         }
         let landing = target?.captureLanding(onScreen: screen.frame)
+        if case .chip(let radius) = target?.captureLandingStyle, let landing {
+            // Onto the floating glass field's chip (display points, top-left origin).
+            let chip = CGRect(x: landing.minX - screen.frame.minX, y: screen.frame.maxY - landing.maxY,
+                              width: landing.width, height: landing.height)
+            panel.overlay.fly(into: chip, cornerRadius: radius, arriving: open) { [weak self] in
+                open()
+                guard let self, id == self.generation else { return }
+                self.closeOverlay(handedOff: opened)
+            }
+            return
+        }
         // Into the notch; if the panel opens on another display, up and off this one's top edge.
         let point = landing.map { CGPoint(x: $0.midX - screen.frame.minX, y: screen.frame.maxY - $0.midY) }
             ?? CGPoint(x: screen.frame.width / 2, y: -40)

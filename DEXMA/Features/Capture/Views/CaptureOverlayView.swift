@@ -264,6 +264,63 @@ final class CaptureOverlayView: NSView {
         DispatchQueue.main.asyncAfter(deadline: .now() + duration * 0.8, execute: arriving)
     }
 
+    /// The lifted selection flies onto `chip` (display points: the floating glass field's chip,
+    /// which shows the same picture) and shrinks to fit inside it, rounding to its corners, then
+    /// fades into it; everything else fades. `arriving` a moment before it lands (time for the
+    /// glass to appear), `completion` when it's gone.
+    func fly(into chip: CGRect, cornerRadius: CGFloat, arriving: @escaping () -> Void,
+             completion: @escaping () -> Void) {
+        let duration = look.flight
+        for layer in [frozen, dim, glow, stroke] { fade(layer, to: 0, duration: look.fadeOut) }
+        if let layer = hint.layer { fade(layer, to: 0, duration: 0.1) }
+
+        let start = CGPoint(x: lift.frame.midX, y: lift.frame.midY)
+        let target = CGPoint(x: chip.midX, y: chip.midY)
+        let size = lift.bounds.size
+        // Fitted inside the chip (the chip fills its square with the same picture).
+        let end = min(chip.width / max(size.width, 1), chip.height / max(size.height, 1))
+        let path = CGMutablePath()
+        path.move(to: start)
+        path.addQuadCurve(to: target, control: CGPoint(x: lerp(start.x, target.x, 0.3), y: lerp(start.y, target.y, 0.85)))
+        let position = CAKeyframeAnimation(keyPath: "position")
+        position.path = path
+        let transform = CABasicAnimation(keyPath: "transform")
+        transform.fromValue = NSValue(caTransform3D: CATransform3DMakeScale(look.lift, look.lift, 1))
+        transform.toValue = NSValue(caTransform3D: CATransform3DMakeScale(end, end, 1))
+        let opacity = CAKeyframeAnimation(keyPath: "opacity")
+        opacity.values = [1, 1, 0]
+        opacity.keyTimes = [0, 0.88, 1]
+        let shadow = CABasicAnimation(keyPath: "shadowOpacity")
+        shadow.fromValue = lift.shadowOpacity
+        shadow.toValue = 0
+        shadow.duration = duration * 0.6
+        let group = CAAnimationGroup()
+        group.animations = [position, transform, opacity, shadow]
+        group.duration = duration
+        group.timingFunction = CAMediaTimingFunction(controlPoints: 0.45, 0, 0.25, 1)
+        // The corners end as the chip's (in the layer's own, unscaled, points).
+        let finalRadius = cornerRadius / max(end, 0.001)
+        let round = CABasicAnimation(keyPath: "cornerRadius")
+        round.fromValue = liftImage.cornerRadius
+        round.toValue = finalRadius
+        round.duration = duration
+        round.timingFunction = group.timingFunction
+
+        CATransaction.begin()
+        CATransaction.setCompletionBlock(completion)
+        withoutAnimation {
+            lift.position = target
+            lift.transform = CATransform3DMakeScale(end, end, 1)
+            lift.opacity = 0
+            lift.shadowOpacity = 0
+            liftImage.cornerRadius = finalRadius
+        }
+        lift.add(group, forKey: "flight")
+        liftImage.add(round, forKey: "round")
+        CATransaction.commit()
+        DispatchQueue.main.asyncAfter(deadline: .now() + duration * 0.6, execute: arriving)
+    }
+
     /// Everything fades away (cancel, or Reduce Motion's hand-off), then `completion`.
     func fadeAway(duration: Double, completion: @escaping () -> Void) {
         acceptsStrokes = false

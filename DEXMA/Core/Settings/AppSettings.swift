@@ -36,6 +36,15 @@ final class AppSettings {
     var renderQuality: RenderQuality { didSet { save(renderQuality.rawValue, "renderQuality") } }
     /// The Claude tab's page zoom (1 = 100 %): lower fits more in the panel.
     var claudeZoom: Double { didSet { save(claudeZoom, "claudeZoom") } }
+    /// Claude in a Spotlight-style floating glass window instead of the notch (preview): the
+    /// Claude tab and Draw to ask hand over to it.
+    var claudeInGlass: Bool { didSet { save(claudeInGlass, "claudeInGlass") } }
+    /// The floating glass window's own global shortcut.
+    var glassHotKey: KeyCombo {
+        didSet { save(try? JSONEncoder().encode(glassHotKey), "glassHotKey") }
+    }
+    /// claude.ai's page shows the glass through it (otherwise its own dark background inside the glass).
+    var claudeSeeThrough: Bool { didSet { save(claudeSeeThrough, "claudeSeeThrough") } }
     var escClosesPanel: Bool { didSet { save(escClosesPanel, "escClosesPanel") } }
     var closesOnFocusLoss: Bool { didSet { save(closesOnFocusLoss, "closesOnFocusLoss") } }
     var hoverToPeek: Bool { didSet { save(hoverToPeek, "hoverToPeek") } }
@@ -91,6 +100,10 @@ final class AppSettings {
             renderQuality = bool("screenWarp", true) ? .quality : .performance
         }
         claudeZoom = double("claudeZoom", 1, Self.claudeZoomRange)
+        claudeInGlass = bool("claudeInGlass", true)
+        glassHotKey = d.data(forKey: "glassHotKey").flatMap { try? JSONDecoder().decode(KeyCombo.self, from: $0) }
+            ?? .defaultGlassCombo
+        claudeSeeThrough = bool("claudeSeeThrough", true)
         escClosesPanel = bool("escClosesPanel", true)
         closesOnFocusLoss = bool("closesOnFocusLoss", true)
         hoverToPeek = bool("hoverToPeek", true)

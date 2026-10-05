@@ -63,6 +63,11 @@ final class WebTabView: NSView {
         didSet { if cardColor != oldValue { needsDisplay = true } }
     }
 
+    /// The card paints its colour behind the page (off in floating glass with a see-through page).
+    var drawsCardBackground = true {
+        didSet { if drawsCardBackground != oldValue { needsDisplay = true } }
+    }
+
     /// A page has been loaded: it replaces the empty state (until a reset).
     var showsPage: Bool {
         get { !pageClip.isHidden }
@@ -153,8 +158,10 @@ final class WebTabView: NSView {
     }
 
     override func draw(_ dirtyRect: NSRect) {
-        cardColor.setFill()
-        bounds.fill()
+        if drawsCardBackground {
+            cardColor.setFill()
+            bounds.fill()
+        }
         guard hasField else { return }
         NSColor(white: 1, alpha: 0.1).setFill()
         NSBezierPath(roundedRect: fieldRect, xRadius: 9, yRadius: 9).fill()

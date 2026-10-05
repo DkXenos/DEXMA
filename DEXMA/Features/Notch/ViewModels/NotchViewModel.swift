@@ -44,6 +44,8 @@ final class NotchViewModel: SwipeTarget, TabSwipeTarget, CaptureHandoffTarget, D
     let urlField: URLEntryField
     /// Draw to ask: the band's Capture button and a waiting capture's chip (set once at launch).
     @ObservationIgnored var capture: CaptureViewModel?
+    /// Claude in floating glass: selecting the Claude tab hands over to it (`setClaudeRedirect`).
+    @ObservationIgnored private(set) weak var claudeRedirect: ClaudeTabRedirect?
     /// A capture is going on: the notch stays out of the way (no peeking under the overlay).
     @ObservationIgnored private var isCapturing = false
     @ObservationIgnored var gestureTuning = GestureTuning.standard
@@ -98,7 +100,7 @@ final class NotchViewModel: SwipeTarget, TabSwipeTarget, CaptureHandoffTarget, D
             motion.contentDidChange(self.search.session)
         }
         claude.session.onChange = { [weak self] in
-            guard let self else { return }
+            guard let self, self.claudeRedirect == nil else { return }
             motion.contentDidChange(self.claude.session)
         }
         devicesPage.onChange = { [weak self] in
@@ -222,7 +224,9 @@ final class NotchViewModel: SwipeTarget, TabSwipeTarget, CaptureHandoffTarget, D
         driver.animate(to: 1, with: openSpring, initialVelocity: initialVelocity)
     }
 
-    func close(initialVelocity: CGFloat? = nil, fromGesture: Bool = false) {
+    /// `returnsFocus` false: the keyboard is about to go to another DEXMA window (the floating
+    /// glass), so it isn't handed back to the app the user was in.
+    func close(initialVelocity: CGFloat? = nil, fromGesture: Bool = false, returnsFocus: Bool = true) {
         // Before focus leaves: the snapshot must match the frame on screen right now.
         settleTabsNow()
         if progress != 0 { motion.begin() }
@@ -235,7 +239,7 @@ final class NotchViewModel: SwipeTarget, TabSwipeTarget, CaptureHandoffTarget, D
             // Click-through from the moment it starts closing, not when the animation ends.
             panel.ignoresMouseEvents = true
             panel.allowsKey = false
-            focus.returnFocus(from: panel)
+            if returnsFocus { focus.returnFocus(from: panel) } else { focus.forget() }
         }
         ticksOnLanding = fromGesture
         driver.animate(to: 0, with: closeSpring, initialVelocity: initialVelocity)
@@ -338,7 +342,8 @@ final class NotchViewModel: SwipeTarget, TabSwipeTarget, CaptureHandoffTarget, D
         panel.setFrame(newGeometry.panelFrame, display: true)
         session.resize(to: newGeometry.contentFrame.size)
         search.session.resize(to: newGeometry.contentFrame.size)
-        claude.session.resize(to: newGeometry.contentFrame.size)
+        // In floating glass the Claude card has the glass card's size.
+        if claudeRedirect == nil { claude.session.resize(to: newGeometry.contentFrame.size) }
         devicesPage.resize(to: newGeometry.contentFrame.size)
         pager.resize(to: newGeometry.contentFrame.size)
         // Resized: the cached snapshots no longer fit.
@@ -401,6 +406,10 @@ final class NotchViewModel: SwipeTarget, TabSwipeTarget, CaptureHandoffTarget, D
     /// Shows `newTab` (clicked, or ⌘-number): the pages, indicator and band slide there on the
     /// tab spring (jump with Reduce Motion) and it gets the keyboard if open.
     func select(_ newTab: PanelTab) {
+        if newTab == .claude, claudeRedirect != nil {
+            handOffClaude()
+            return
+        }
         commit(newTab)
         let target = CGFloat(index(of: newTab))
         if reduceMotion || state != .open {
@@ -533,6 +542,13 @@ final class NotchViewModel: SwipeTarget, TabSwipeTarget, CaptureHandoffTarget, D
         }
         target = min(max(target, 0), last)
         let newTab = PanelTab.allCases[target]
+        if newTab == .claude, claudeRedirect != nil {
+            // Back to where the swipe started as the notch collapses; Claude opens in glass.
+            Haptics.tap()
+            tabDriver.animate(to: CGFloat(swipeStart), with: tabSpring, initialVelocity: velocity)
+            handOffClaude()
+            return
+        }
         if newTab != tab {
             Haptics.tap()
             commit(newTab)
@@ -547,6 +563,37 @@ final class NotchViewModel: SwipeTarget, TabSwipeTarget, CaptureHandoffTarget, D
         if value < 0 { return -min(-value * t.rubberBand, t.rubberBandLimit) }
         if value > last { return last + min((value - last) * t.rubberBand, t.rubberBandLimit) }
         return value
+    }
+
+    // MARK: Claude in floating glass
+
+    /// Claude moves out of the notch (`redirect`, with `placeholder` as its page in the card while
+    /// a swipe passes it) or back in (nil: its card is a page of the notch again).
+    func setClaudeRedirect(_ redirect: ClaudeTabRedirect?, placeholder: NSView) {
+        guard redirect !== claudeRedirect else { return }
+        claudeRedirect = redirect
+        if redirect != nil, tab == .claude { select(.terminal) }
+        let claudePage: NSView
+        if redirect == nil {
+            claudePage = claude.session.card
+            claude.session.resize(to: geometry.contentFrame.size)
+            motion.contentDidChange(claude.session)
+        } else {
+            claudePage = placeholder
+        }
+        pager.setPages([session.container, search.session.card, claudePage, devicesPage.card])
+    }
+
+    /// Selecting Claude with it in floating glass: the notch collapses (the keyboard goes
+    /// straight to the glass, not back to the app first) and the glass comes up.
+    private func handOffClaude() {
+        guard let claudeRedirect else { return }
+        if state != .closed {
+            close(returnsFocus: false)
+        } else {
+            hideDeviceActivity()
+        }
+        claudeRedirect.presentClaude()
     }
 
     /// A click on one of the band's controls: a light tick, then its action.
@@ -907,6 +954,7 @@ final class NotchViewModel: SwipeTarget, TabSwipeTarget, CaptureHandoffTarget, D
     var debugDriver: SpringDriver { driver }
     var debugTabDriver: SpringDriver { tabDriver }
     var debugTabSwipes: TabSwipeMonitor { tabSwipes }
+    var debugPanel: NotchPanel { panel }
     func debugEscape() -> Bool { handleEscape() }
     #endif
 }
