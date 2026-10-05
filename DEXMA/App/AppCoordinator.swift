@@ -22,6 +22,12 @@ final class AppCoordinator: WindowRouter {
     private var gestures: GestureEngine?
     private var hotKey: HotKeyRegistrar?
     private var captureHotKey: HotKeyRegistrar?
+    private var glassHotKey: HotKeyRegistrar?
+    /// Claude in floating glass (preview): built at launch, hidden until asked for.
+    private var claudeGlass: ClaudeGlassViewModel?
+    /// The notch's Claude page while Claude is in floating glass.
+    private let claudePlaceholder = RedirectedTabPage(title: "Claude opens in floating glass",
+                                                      detail: "Settings → Claude tab to keep it in the notch")
     private var capture: CaptureViewModel?
     private var captureOnboarding: CaptureOnboardingWindowController?
     private var statusItem: StatusItemController?
@@ -60,6 +66,15 @@ final class AppCoordinator: WindowRouter {
         capture.target = notch
         notch.capture = capture
         self.capture = capture
+        // Pre-warm: the floating glass window and its views exist from launch (ordered out).
+        let claudeGlass = ClaudeGlassViewModel(claude: claude)
+        claudeGlass.install(root: ClaudeGlassView(viewModel: claudeGlass))
+        claudeGlass.capture = capture
+        claudeGlass.companion = notch
+        claudeGlass.onWillPresent = { [weak notch] in
+            if notch?.isOpen == true { notch?.close(returnsFocus: false) }
+        }
+        self.claudeGlass = claudeGlass
 
         let hostingView = NSHostingView(rootView: NotchContentView(viewModel: notch))
         hostingView.sizingOptions = []  // Fixed-size panel: SwiftUI must never resize it.
@@ -98,6 +113,10 @@ final class AppCoordinator: WindowRouter {
             if let capture, capture.isActive { capture.cancel() } else { notch?.toggle() }
         }
         captureHotKey = HotKeyRegistrar { [weak capture] in capture?.toggle() }
+        // Hides it while capturing too (a capture cancels first, like the panel's shortcut).
+        glassHotKey = HotKeyRegistrar { [weak claudeGlass, weak capture] in
+            if let capture, capture.isActive { capture.cancel() } else { claudeGlass?.toggle() }
+        }
         settings.onChange = { [weak self] in self?.applySettings() }
         applySettings()
         let menuBar = MenuBarViewModel(settings: settings, notch: notch, capture: capture, router: self)
@@ -122,6 +141,9 @@ final class AppCoordinator: WindowRouter {
         // Compile the liquid effect's shaders now, so the first open doesn't hitch.
         LiquidMotionLayer<EmptyView>.precompile()
         DispatchQueue.main.async { notch.warmUpEffects() }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak claudeGlass] in
+            if claudeGlass?.isEnabled == true { claudeGlass?.glass.warmUp() }
+        }
         #if DEBUG
         DebugHarness.runIfRequested(coordinator: self, panel: panel, notch: notch, session: session)
         #endif
@@ -136,6 +158,9 @@ final class AppCoordinator: WindowRouter {
     }
 
     #if DEBUG
+    var debugClaudeGlass: ClaudeGlassViewModel? { claudeGlass }
+    var debugCapture: CaptureViewModel? { capture }
+
     /// `-devicetest`: the monitor's launch check. Returns whether it's listening.
     func debugStartBudsMonitor() -> Bool {
         budsMonitor.start()
@@ -153,6 +178,7 @@ final class AppCoordinator: WindowRouter {
     private func applySettings() {
         hotKey?.register(settings.hotKey)
         captureHotKey?.register(settings.captureHotKey)
+        applyGlassSettings()
         if let capture {
             capture.shortcut = settings.captureHotKey.display
             capture.startsNewChat = settings.captureNewChat
@@ -187,6 +213,25 @@ final class AppCoordinator: WindowRouter {
         updateHoverMonitor()
     }
 
+    /// Claude in floating glass on or off: the Claude card moves between the notch and the glass
+    /// (the side letting go first), and Draw to ask lands in whichever has it.
+    private func applyGlassSettings() {
+        guard let notch, let claudeGlass, let capture else { return }
+        let enabled = settings.claudeInGlass
+        claudeGlass.captureShortcut = settings.captureHotKey.display
+        if enabled {
+            notch.setClaudeRedirect(claudeGlass, placeholder: claudePlaceholder)
+            claudeGlass.setEnabled(true, seeThrough: settings.claudeSeeThrough)
+            capture.target = claudeGlass
+            glassHotKey?.register(settings.glassHotKey)
+        } else {
+            claudeGlass.setEnabled(false, seeThrough: settings.claudeSeeThrough)
+            notch.setClaudeRedirect(nil, placeholder: claudePlaceholder)
+            capture.target = notch
+            glassHotKey?.unregister()
+        }
+    }
+
     /// The pointer is watched for the hover peek, and while the connect peek's pill is out.
     private func updateHoverMonitor() {
         if settings.hoverToPeek || notch?.activity != nil { hover.start() } else { hover.stop() }
@@ -196,12 +241,12 @@ final class AppCoordinator: WindowRouter {
 
     func showSettings() {
         if settingsWindow == nil {
-            guard let gestures, let hotKey, let captureHotKey else { return }
+            guard let gestures, let hotKey, let captureHotKey, let glassHotKey else { return }
             guard let devices else { return }
             let viewModel = SettingsViewModel(settings: settings, accessibility: accessibility,
                                               screenRecording: screenRecording, bluetooth: bluetooth,
                                               devices: devices, gestures: gestures,
-                                              hotKeys: [hotKey, captureHotKey], router: self)
+                                              hotKeys: [hotKey, captureHotKey, glassHotKey], router: self)
             settingsWindow = SettingsWindowController(viewModel: viewModel)
         }
         settingsWindow?.show()

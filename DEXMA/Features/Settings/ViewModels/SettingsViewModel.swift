@@ -16,7 +16,7 @@ final class SettingsViewModel {
     /// The Devices tab's devices (Settings → Forget).
     private let devices: DevicesViewModel
     private let gestures: GestureEngine
-    /// The panel's shortcut, then Draw to ask's.
+    /// The panel's shortcut, Draw to ask's, then the floating glass's.
     private let hotKeys: [HotKeyRegistrar]
     @ObservationIgnored private weak var router: (any WindowRouter)?
 
@@ -36,9 +36,16 @@ final class SettingsViewModel {
 
     /// False when another app holds the shortcut.
     var isHotKeyWorking: Bool { hotKeys.first?.isWorking ?? true }
-    var isCaptureHotKeyWorking: Bool { hotKeys.last?.isWorking ?? true }
+    var isCaptureHotKeyWorking: Bool { hotKeys.count > 1 ? hotKeys[1].isWorking : true }
+    var isGlassHotKeyWorking: Bool { hotKeys.count > 2 ? hotKeys[2].isWorking : true }
     /// Both shortcuts are the same combination (only one of them would work).
     var hotKeysClash: Bool { settings.hotKey == settings.captureHotKey }
+    /// The floating glass's shortcut is also the panel's or Draw to ask's.
+    var glassHotKeyClash: String? {
+        if settings.glassHotKey == settings.hotKey { return "the panel's" }
+        if settings.glassHotKey == settings.captureHotKey { return "Draw to ask's" }
+        return nil
+    }
     /// False without a multitouch trackpad (the gesture engine stays off).
     var areGesturesAvailable: Bool { gestures.isRunning }
     var isAccessibilityGranted: Bool { accessibility.isGranted }

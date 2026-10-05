@@ -143,12 +143,37 @@ struct SettingsView: View {
                     .font(.caption).foregroundStyle(.secondary)
             }
 
-            Section("Claude tab") {
+            Section {
+                Toggle(isOn: $settings.claudeInGlass) {
+                    Text("Claude in floating glass (preview)")
+                    Text("A Spotlight-style Liquid Glass window instead of the notch: the Claude tab and Draw to ask open it.")
+                }
+                if settings.claudeInGlass {
+                    LabeledContent("Shortcut") {
+                        ShortcutRecorder(combo: $settings.glassHotKey, defaultCombo: .defaultGlassCombo,
+                                         onRecordingChange: viewModel.setRecordingShortcut)
+                    }
+                    if let clash = viewModel.glassHotKeyClash {
+                        Label("This is also \(clash) shortcut. Pick a different one.",
+                              systemImage: "exclamationmark.triangle")
+                            .foregroundStyle(.orange)
+                    } else if !viewModel.isGlassHotKeyWorking {
+                        Label("Another app is using this shortcut. Pick a different one.",
+                              systemImage: "exclamationmark.triangle")
+                            .foregroundStyle(.orange)
+                    }
+                    Toggle(isOn: $settings.claudeSeeThrough) {
+                        Text("See-through Claude page")
+                        Text("The conversation shows the glass through it. Off: claude.ai's own dark background inside the glass.")
+                    }
+                }
                 LabeledContent("Page zoom") {
                     Slider(value: $settings.claudeZoom, in: AppSettings.claudeZoomRange, step: 0.05)
                     Text("\(Int((settings.claudeZoom * 100).rounded())) %").monospacedDigit()
                         .frame(width: 56, alignment: .trailing)
                 }
+            } header: {
+                Text("Claude tab")
             }
 
             Section {
