@@ -71,7 +71,7 @@ final class ClaudeAttacher {
     private func paste(_ image: CapturedImage, in window: NSWindow, before: Int) async -> Bool {
         guard window.isKeyWindow else { return false }
         _ = try? await webView.evaluateJavaScript(Self.pasteWatchScript + WebTab.focusComposerScript)
-        window.makeFirstResponder(webView)
+        tab.focusPage()
         let board = NSPasteboard.general
         let saved = PasteboardSnapshot(board)
         board.clearContents()

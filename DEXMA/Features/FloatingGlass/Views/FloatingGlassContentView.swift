@@ -1,8 +1,8 @@
 import AppKit
 import SwiftUI
 
-/// The floating glass panel's content: the SwiftUI glass (`root`) filling the window, and AppKit
-/// overlays above it (web content can't live inside a SwiftUI glass effect's offscreen pass).
+/// The floating glass panel's content: the SwiftUI glass (`root`) filling the window, and any
+/// AppKit overlays above it.
 final class FloatingGlassContentView: NSView {
     init<Root: View>(root: Root) {
         super.init(frame: .zero)

@@ -115,12 +115,26 @@ final class ClaudeComposer {
             setTimeout(function () { scheduled = false; apply(); }, 400);
           }
           window.__dexmaApply = apply;
+          // While hidden, the composer can't take focus by itself (claude.ai focuses it whenever the
+          // window becomes key: what was typed went there, and Return sent it without DEXMA's
+          // picture). DEXMA's own scripts allow it while they work (__dexmaFocusOK).
+          document.addEventListener('focusin', function (e) {
+            var state = window.__dexmaGlass || {};
+            if (!state.native || window.__dexmaFocusOK) return;
+            var box = document.querySelector('[data-dexma-composer]');
+            if (box && box.contains(e.target) && e.target.blur) e.target.blur();
+          }, true);
           new MutationObserver(later).observe(document, { childList: true, subtree: true });
           addEventListener('resize', later);
           addEventListener('DOMContentLoaded', apply);
           apply();
         })();
         """
+
+    /// DEXMA's scripts may focus the hidden composer (for a paste or typing), or not any more.
+    func allowComposerFocus(_ allowed: Bool) async {
+        _ = try? await webView.evaluateJavaScript("window.__dexmaFocusOK = \(allowed);")
+    }
 
     // MARK: Sending
 
@@ -186,6 +200,7 @@ final class ClaudeComposer {
         """
 
     private static let editorPrelude = """
+        window.__dexmaFocusOK = true;
         var editor = document.querySelector('[data-testid="chat-input"]')
           || document.querySelector('div.ProseMirror[contenteditable="true"]');
         if (!editor) return false;

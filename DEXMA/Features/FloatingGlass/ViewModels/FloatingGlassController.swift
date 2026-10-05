@@ -47,9 +47,20 @@ final class FloatingGlassController {
         return NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
     }
 
-    /// The appear/disappear spring, ~0.3 s like Spotlight; Reduce Motion: a short fade.
+    /// Appearing: a spring, ~0.3 s like Spotlight; Reduce Motion: a short fade.
     var spring: Animation {
         reduceMotion ? .easeInOut(duration: 0.18) : .spring(duration: 0.3, bounce: 0.12)
+    }
+
+    /// Disappearing: quicker, and it ends exactly (a spring's tail left a faint ghost of the glass
+    /// for ~0.1 s after everything else had gone: recorded frame by frame).
+    var exit: Animation {
+        reduceMotion ? .easeInOut(duration: 0.15) : .easeOut(duration: 0.16)
+    }
+
+    /// The buttons growing out of the field: snappier than the field itself.
+    private var accessorySpring: Animation {
+        reduceMotion ? .easeInOut(duration: 0.18) : .spring(duration: 0.22, bounce: 0.1)
     }
 
     /// Puts the panel up on `screen` (default: the one with the pointer) and takes the keyboard;
@@ -74,10 +85,10 @@ final class FloatingGlassController {
             }
             let id = generation
             // The buttons a beat later, so they grow out of the main shape (glassEffectID morph).
-            let delay = reduceMotion ? 0 : 0.07
+            let delay = reduceMotion ? 0 : 0.03
             DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
                 guard let self, id == self.generation, self.isPresented else { return }
-                withAnimation(self.spring) { self.showsAccessories = true }
+                withAnimation(self.accessorySpring) { self.showsAccessories = true }
             }
         }
         panel.makeKey()
@@ -92,7 +103,7 @@ final class FloatingGlassController {
         generation += 1
         let id = generation
         panel.allowsKey = false
-        withAnimation(spring, completionCriteria: .removed) {
+        withAnimation(exit, completionCriteria: .removed) {
             isShown = false
             showsAccessories = false
             scale = reduceMotion ? 1 : 0.96
@@ -106,6 +117,10 @@ final class FloatingGlassController {
         // starts the animation; not at all if it's been presented again meanwhile.
         DispatchQueue.main.async { [weak self] in
             guard let self, id == self.generation else { return }
+            #if DEBUG
+            let begin = CACurrentMediaTime()
+            defer { self.debugFocusReturn = (begin, CACurrentMediaTime() - begin) }
+            #endif
             if returnsFocus { self.focus.returnFocus(from: self.panel) } else { self.focus.forget() }
         }
     }
@@ -159,5 +174,7 @@ final class FloatingGlassController {
 
     #if DEBUG
     @ObservationIgnored var debugReduceMotion: Bool?
+    /// When the last focus return ran, and how long it took.
+    @ObservationIgnored var debugFocusReturn: (CFTimeInterval, CFTimeInterval) = (0, 0)
     #endif
 }

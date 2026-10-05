@@ -2,7 +2,7 @@ import SwiftUI
 
 /// The floating glass's shapes, in one glass container: the field (a capsule, Spotlight's size and
 /// type), the round buttons beside it (they grow out of it as it appears), and the conversation
-/// card below (it grows out of the field; claude.ai's page sits in it, see `GlassWebCard`).
+/// card below (it grows out of the field; claude.ai's page lies on it: `GlassWebCard`).
 /// Regular glass throughout (text over any background), system label colours on it. A click on
 /// the window's empty, transparent area hides it, like a click outside.
 struct ClaudeGlassView: View {
@@ -12,6 +12,9 @@ struct ClaudeGlassView: View {
     var body: some View {
         let glass = viewModel.glass
         let layout = glass.layout
+        let cardHeight = layout.card(fieldHeight: viewModel.fieldHeight).height
+        let shown = glass.isShown && viewModel.isExpanded
+        let scale = glass.reduceMotion ? 1 : glass.scale
         ZStack(alignment: .topLeading) {
             Color.clear
                 .contentShape(Rectangle())
@@ -26,15 +29,40 @@ struct ClaudeGlassView: View {
                             buttons
                         }
                     }
-                    if glass.isShown, viewModel.isExpanded {
-                        card(height: layout.card(fieldHeight: viewModel.fieldHeight).height)
+                    // A constant width, so the scale's anchor doesn't move as the buttons come in
+                    // (the page above mirrors this layout).
+                    .frame(width: rowWidth, height: viewModel.fieldHeight, alignment: .topLeading)
+                    if shown {
+                        cardGlass(height: cardHeight)
                     }
                 }
-                .scaleEffect(glass.reduceMotion ? 1 : glass.scale, anchor: .top)
+                .scaleEffect(scale, anchor: .top)
             }
             .padding(.leading, layout.field.minX)
             .padding(.top, layout.field.minY)
+            // claude.ai's page on the card. Outside the glass container: inside it, the container
+            // draws the glass over it (the page only showed blurred through its own card). Never
+            // removed — attaching a web view to a window costs WebKit 40–95 ms of main thread — it
+            // fades on its own layer, timed to the card (`GlassWebCard.setVisible`).
+            VStack(alignment: .leading, spacing: GlassMetrics.cardGap) {
+                Color.clear
+                    .frame(width: rowWidth, height: viewModel.fieldHeight)
+                GlassPage(card: viewModel.webCard)
+                    .frame(width: GlassMetrics.fieldWidth, height: cardHeight)
+                    .allowsHitTesting(shown)
+            }
+            // Only with the card open: scaling the web view's frame for nothing cost the dismiss.
+            .scaleEffect(viewModel.isExpanded ? scale : 1, anchor: .top)
+            .padding(.leading, layout.field.minX)
+            .padding(.top, layout.field.minY)
+            .allowsHitTesting(shown)
         }
+    }
+
+    /// The field and its buttons.
+    private var rowWidth: CGFloat {
+        GlassMetrics.fieldWidth
+            + CGFloat(ClaudeGlassViewModel.buttonCount) * (GlassMetrics.buttonGap + GlassMetrics.buttonSize)
     }
 
     // MARK: Field
@@ -92,8 +120,8 @@ struct ClaudeGlassView: View {
 
     // MARK: Card
 
-    /// The glass behind claude.ai's page (the page itself is the AppKit `GlassWebCard` above).
-    private func card(height: CGFloat) -> some View {
+    /// The card's glass (claude.ai's page is above it, see `body`).
+    private func cardGlass(height: CGFloat) -> some View {
         let shape = RoundedRectangle(cornerRadius: GlassMetrics.cardRadius, style: .circular)
         return Color.clear
             .frame(width: GlassMetrics.fieldWidth, height: height)

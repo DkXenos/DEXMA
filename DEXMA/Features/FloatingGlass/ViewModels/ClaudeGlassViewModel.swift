@@ -19,6 +19,20 @@ final class ClaudeGlassViewModel: ClaudeTabRedirect, CaptureHandoffTarget {
     /// Capture, New chat, Open in browser.
     static let buttonCount = 3
 
+    /// claude.ai's page fades on its own layer, timed to the glass transitions as recorded frame
+    /// by frame (`-glasstest -glassrecord`): the system's glass appears about two frames after the
+    /// state changes and dissolves within ~40 ms, whatever the animation's length, so the page
+    /// comes in just after the glass and leaves at least as fast (with the glass's own curve it
+    /// floated over the screen before the card was there, and lingered after it had gone).
+    private enum PageFade {
+        static let inDelay = 0.03
+        static let inDuration = 0.15
+        /// With the card growing out of the field: in as it lands.
+        static let expandDelay = 0.1
+        static let expandDuration = 0.18
+        static let outDuration = 0.09
+    }
+
     /// The card with the conversation is open.
     private(set) var isExpanded = false
     /// A capture waiting for the question (the field's chip).
@@ -64,15 +78,14 @@ final class ClaudeGlassViewModel: ClaudeTabRedirect, CaptureHandoffTarget {
         // claude.ai's sign-in popup (a window with the page's own web view) keeps it up.
         glass.keepsShownWhenKey = { window in window.contentView is WKWebView }
         claude.onURLChange = { [weak self] url in self?.pageDidChange(url) }
-        glass.onDidDismiss = { [weak self] in self?.didDismiss() }
+        // Hidden: the page waits out of the way.
+        glass.onDidDismiss = { [weak self] in self?.webCard.setVisibleNow(false) }
     }
 
-    /// The panel's content: `root` (the SwiftUI glass) with the web card above it.
+    /// The panel's content: `root`, the SwiftUI glass.
     func install<Root: View>(root: Root) {
-        let content = FloatingGlassContentView(root: root)
-        content.addOverlay(webCard)
-        glass.panel.contentView = content
-        updateWebCardFrame()
+        glass.panel.contentView = FloatingGlassContentView(root: root)
+        webCard.pageSize = glass.layout.card.size
     }
 
     // MARK: Settings
@@ -90,7 +103,6 @@ final class ClaudeGlassViewModel: ClaudeTabRedirect, CaptureHandoffTarget {
             session.setPresentation(glass: true, clear: clear)
             webCard.dimAmount = clear ? 0.12 : 0
             applyPageStyle()
-            updateWebCardFrame()
         } else {
             dismiss(returnsFocus: true)
             isEnabled = false
@@ -126,22 +138,20 @@ final class ClaudeGlassViewModel: ClaudeTabRedirect, CaptureHandoffTarget {
                 applyPageStyle()
             }
             isExpanded = !compact && ClaudePageKind(url: claude.url).showsPage
+            webCard.setVisibleNow(false)
         }
         glass.present(on: screen) { [weak self] in self?.focusField() }
-        updateWebCardFrame()
-        if appearing, isExpanded { webCard.setShown(true, duration: 0.2, delay: glass.reduceMotion ? 0 : 0.2) }
+        webCard.pageSize = glass.layout.card.size
+        if appearing, isExpanded {
+            webCard.setVisible(true, duration: PageFade.inDuration, delay: glass.reduceMotion ? 0 : PageFade.inDelay)
+        }
     }
 
     func dismiss(returnsFocus: Bool = true) {
         guard glass.isPresented else { return }
         if mode == .link { setMode(.ask) }
-        webCard.setShown(false, duration: glass.reduceMotion ? 0.1 : 0.12)
+        if isExpanded { webCard.setVisible(false, duration: PageFade.outDuration) }
         glass.dismiss(returnsFocus: returnsFocus)
-    }
-
-    /// Ordered out: the page stops drawing.
-    private func didDismiss() {
-        webCard.hideWhenFaded()
     }
 
     private func focusField() {
@@ -155,33 +165,33 @@ final class ClaudeGlassViewModel: ClaudeTabRedirect, CaptureHandoffTarget {
         GlassMetrics.fieldHeight + inputHeight - GlassTextView.lineHeight
     }
 
-    /// The card's spring (morphing out of the field and back).
+    /// The card growing out of the field (no bounce: the page lands on it).
     private var cardAnimation: Animation {
-        glass.reduceMotion ? .easeInOut(duration: 0.18) : .spring(duration: 0.38, bounce: 0.12)
+        glass.reduceMotion ? .easeInOut(duration: 0.18) : .spring(duration: 0.28, bounce: 0)
     }
 
     func expand() {
         guard glass.isPresented, !isExpanded else { return }
         withAnimation(cardAnimation) { isExpanded = true }
-        updateWebCardFrame()
-        webCard.setShown(true, duration: 0.2, delay: glass.reduceMotion ? 0 : 0.22)
+        webCard.setVisible(true, duration: PageFade.expandDuration,
+                           delay: glass.reduceMotion ? 0 : PageFade.expandDelay)
     }
 
+    /// The card goes (the page first), ending exactly, like hiding.
     func collapse() {
         guard isExpanded else { return }
-        webCard.setShown(false, duration: 0.12) { [weak self] in
-            guard let self else { return }
-            withAnimation(self.cardAnimation, completionCriteria: .removed) {
-                self.isExpanded = false
-            } completion: { [weak self] in
-                self?.webCard.hideWhenFaded()
-            }
-        }
+        withAnimation(glass.exit) { isExpanded = false }
+        webCard.setVisible(false, duration: PageFade.outDuration)
     }
 
-    private func updateWebCardFrame() {
-        let frame = glass.layout.card(fieldHeight: fieldHeight)
-        if webCard.frame != frame { webCard.frame = frame }
+    /// The page is in the panel (SwiftUI puts the card in a moment after `expand`): needed before
+    /// it can take the keyboard or a paste.
+    private func waitForPageInWindow() async -> Bool {
+        for _ in 0..<50 {
+            if claude.session.card.window === glass.panel { return true }
+            try? await Task.sleep(for: .milliseconds(20))
+        }
+        return false
     }
 
     /// A conversation (or the sign-in page) opened in the card's page: the card opens for it.
@@ -196,7 +206,6 @@ final class ClaudeGlassViewModel: ClaudeTabRedirect, CaptureHandoffTarget {
         let height = textView.fittingHeight
         guard height != inputHeight else { return }
         withAnimation(.smooth(duration: 0.15)) { inputHeight = height }
-        updateWebCardFrame()
     }
 
     private func setMode(_ newMode: GlassInputMode) {
@@ -254,14 +263,18 @@ final class ClaudeGlassViewModel: ClaudeTabRedirect, CaptureHandoffTarget {
             await fallBack(text: text)
             return
         }
+        // The hidden composer may take focus while this works (the paste goes to the focused box).
+        await composer.allowComposerFocus(true)
         if let image {
-            guard glass.panel.isKeyWindow, await composer.attacher.insert(image, in: glass.panel) != nil else {
+            guard await waitForPageInWindow(), glass.panel.isKeyWindow,
+                  await composer.attacher.insert(image, in: glass.panel) != nil else {
                 await fallBack(text: text)
                 return
             }
             withAnimation(glass.spring) { attachment = nil }
         }
         let result = await composer.send(text)
+        await composer.allowComposerFocus(false)
         guard result == .sent else {
             Self.logger.error("Sending from the glass field failed: \(String(describing: result), privacy: .public)")
             await fallBack(text: text)
@@ -294,8 +307,8 @@ final class ClaudeGlassViewModel: ClaudeTabRedirect, CaptureHandoffTarget {
         if !text.isEmpty, await composer.attacher.composerState() == .ready {
             _ = await composer.insert(text)
         }
-        guard glass.isPresented else { return }
-        glass.panel.makeFirstResponder(claude.session.webView)
+        guard glass.isPresented, await waitForPageInWindow() else { return }
+        claude.session.focusPage()
         claude.session.focusComposer()
     }
 

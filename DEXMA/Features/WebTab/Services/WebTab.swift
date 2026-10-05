@@ -165,7 +165,28 @@ final class WebTab: NSObject, MotionContent, WKNavigationDelegate, WKUIDelegate,
         card.appearance = appearance
         webView.appearance = appearance
         card.drawsCardBackground = !(glass && clear)
+        pageTakesKeyboardByItself = !glass
         Self.setDrawsBackground(!(glass && clear), of: webView)
+    }
+
+    /// Whether the page may take the keyboard by itself (`KeyboardGuardedWebView`); the floating
+    /// glass keeps it for its own field.
+    var pageTakesKeyboardByItself = true {
+        didSet {
+            let views: [WKWebView?] = [webView, spare]
+            for case let view as KeyboardGuardedWebView in views {
+                view.takesKeyboardByItself = pageTakesKeyboardByItself
+            }
+        }
+    }
+
+    /// The keyboard to the page (DEXMA's own doing: allowed even when the page may not take it).
+    func focusPage() {
+        if let guarded = webView as? KeyboardGuardedWebView {
+            guarded.takeKeyboard()
+        } else {
+            card.window?.makeFirstResponder(webView)
+        }
     }
 
     /// WKWebView on macOS has no public switch for its own background (`underPageBackgroundColor`
@@ -186,7 +207,7 @@ final class WebTab: NSObject, MotionContent, WKNavigationDelegate, WKUIDelegate,
         configuration.websiteDataStore = .default()
         // Without it, WebKit's user agent lacks the Safari token and sites serve a bare page.
         configuration.applicationNameForUserAgent = "Version/26.0 Safari/605.1.15"
-        let webView = WKWebView(frame: CGRect(origin: .zero, size: size), configuration: configuration)
+        let webView = KeyboardGuardedWebView(frame: CGRect(origin: .zero, size: size), configuration: configuration)
         webView.allowsBackForwardNavigationGestures = false  // Sideways swipes switch tabs.
         webView.appearance = NSAppearance(named: .darkAqua)
         webView.alphaValue = 0  // Until its first page has loaded: no white flash.
@@ -258,12 +279,12 @@ final class WebTab: NSObject, MotionContent, WKNavigationDelegate, WKUIDelegate,
 
     /// Search: the page you were reading, else the field. Claude: the message box.
     func restoreFocus() {
-        guard let window = card.window else { return }
+        guard card.window != nil else { return }
         switch configuration.kind {
         case .search:
-            if pageHadFocus, card.showsPage { window.makeFirstResponder(webView) } else { focusField() }
+            if pageHadFocus, card.showsPage { focusPage() } else { focusField() }
         case .claude:
-            window.makeFirstResponder(webView)
+            focusPage()
             focusComposer()
         }
     }
@@ -282,7 +303,7 @@ final class WebTab: NSObject, MotionContent, WKNavigationDelegate, WKUIDelegate,
         fallback = target.fallback
         card.showsPage = true
         webView.load(URLRequest(url: target.url))
-        card.window?.makeFirstResponder(webView)
+        focusPage()
         onChange?()
     }
 
@@ -330,6 +351,7 @@ final class WebTab: NSObject, MotionContent, WKNavigationDelegate, WKUIDelegate,
         old.uiDelegate = nil
         let hadFocus = (card.window?.firstResponder as? NSView)?.isDescendant(of: old) ?? false
         card.replaceWebView(with: fresh)
+        (fresh as? KeyboardGuardedWebView)?.takesKeyboardByItself = pageTakesKeyboardByItself
         adopt(fresh)
         card.showsPage = false
         card.cardColor = WebTabView.defaultColor
