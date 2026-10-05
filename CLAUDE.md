@@ -390,7 +390,8 @@ event-driven; raising it unmutes; muted shows 0 and `speaker.slash.fill`; no vol
 disabled. Brightness: no public API on Apple silicon (IOKit display parameters don't apply) →
 DisplayServices `Get/Set/CanChangeBrightness(displayID)` via `dlsym` (what the brightness keys
 use; MonitorControl/Lunar do the same), built-in display only (externals need DDC: disabled,
-"—"), never below 0.02 (0 turns the backlight off). No change notification is used (its
+"—"), down to 0 like the brightness keys (the user asked for 0, 2026-10-05; it was clamped at
+0.02 before). No change notification is used (its
 signature isn't documented), so it's re-read when the tab comes to rest on screen
 (`DevicesPage.didShow`: panel settled open on Devices, or the tab spring settled on it) —
 never during an animation; a refresh costs 0.17 ms. The page's picture follows the controls'

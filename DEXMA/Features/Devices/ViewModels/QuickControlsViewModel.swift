@@ -38,7 +38,7 @@ final class QuickControlsViewModel {
 
     func setBrightness(_ value: Double) {
         guard brightness != nil else { return }
-        let level = max(value, Double(DisplayBrightness.minimum))
+        let level = min(max(value, 0), 1)
         DisplayBrightness.set(Float(level))
         if brightness != level { brightness = level }
     }

@@ -10,10 +10,6 @@ enum DisplayBrightness {
     private typealias SetFunction = @convention(c) (CGDirectDisplayID, Float) -> Int32
     private typealias CanChangeFunction = @convention(c) (CGDirectDisplayID) -> Bool
 
-    /// Never all the way down: at 0 the backlight goes off, and a slider can't be found in
-    /// the dark.
-    static let minimum: Float = 0.02
-
     private static let logger = Logger(category: "Controls")
     private static let functions: (GetFunction, SetFunction, CanChangeFunction)? = {
         guard let handle = dlopen("/System/Library/PrivateFrameworks/DisplayServices.framework/DisplayServices", RTLD_NOW),
@@ -40,6 +36,7 @@ enum DisplayBrightness {
 
     static func set(_ value: Float) {
         guard let (_, set, canChange) = functions, let display = builtInDisplay, canChange(display) else { return }
-        _ = set(display, min(max(value, minimum), 1))
+        // 0 is allowed, as with the brightness keys (the user's choice, 2026-10-05).
+        _ = set(display, min(max(value, 0), 1))
     }
 }
